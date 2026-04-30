@@ -3,6 +3,7 @@ package vm
 
 import (
 	"github.com/Giulio2002/gevm/spec"
+	"github.com/Giulio2002/gevm/types"
 )
 
 // opPop — Pop1 body. Stack check done by boilerplate.
@@ -73,7 +74,7 @@ func opMstore8(interp *Interpreter) {
 	if !interp.ResizeMemory(offset, 1) {
 		return
 	}
-	interp.Memory.SetByte(offset, byte(value.LowU64()))
+	interp.Memory.SetByte(offset, byte(types.U256LowU64(&value)))
 }
 
 // opSload — Custom flush handler (needs Host).

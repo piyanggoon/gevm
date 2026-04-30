@@ -7,17 +7,18 @@ import (
 	_ "embed"
 	"encoding/binary"
 	"encoding/hex"
+	"github.com/holiman/uint256"
 	"strings"
 	"testing"
 
-	"github.com/Giulio2002/gevm/host"
 	keccak "github.com/Giulio2002/fastkeccak"
-	"github.com/Giulio2002/gevm/types"
+	"github.com/Giulio2002/gevm/host"
+	"github.com/Giulio2002/gevm/precompiles"
 	"github.com/Giulio2002/gevm/spec"
 	"github.com/Giulio2002/gevm/state"
-	"github.com/Giulio2002/gevm/vm"
-	"github.com/Giulio2002/gevm/precompiles"
 	spectest "github.com/Giulio2002/gevm/tests/spec"
+	"github.com/Giulio2002/gevm/types"
+	"github.com/Giulio2002/gevm/vm"
 
 	bls12381 "github.com/consensys/gnark-crypto/ecc/bls12-381"
 )
@@ -438,7 +439,7 @@ func BenchmarkERC20Transfer(b *testing.B) {
 	callerSlot := solidityMappingSlot(benchCaller, 1)
 	largeBalance := types.U256FromLimbs(0, 0, 1, 0) // ~2^128
 
-	storage := map[types.Uint256]types.Uint256{
+	storage := map[uint256.Int]uint256.Int{
 		// totalSupply
 		types.U256From(0): largeBalance,
 		// balances[benchCaller]
@@ -488,9 +489,9 @@ func BenchmarkTxType(b *testing.B) {
 	recipientSlot := solidityMappingSlot(benchEOA, 1)
 	largeBalance := types.U256FromLimbs(0, 0, 1, 0)
 
-	storage := map[types.Uint256]types.Uint256{
+	storage := map[uint256.Int]uint256.Int{
 		types.U256From(0): largeBalance,
-		callerSlot:             largeBalance,
+		callerSlot:        largeBalance,
 	}
 
 	// ABI: transfer(address to, uint256 amount) selector = 0xa9059cbb
@@ -544,7 +545,7 @@ func BenchmarkTxType(b *testing.B) {
 				GasPrice: types.U256From(1),
 				Input:    calldata,
 				AccessList: []host.AccessListItem{
-					{Address: benchContract, StorageKeys: []types.Uint256{callerSlot, recipientSlot}},
+					{Address: benchContract, StorageKeys: []uint256.Int{callerSlot, recipientSlot}},
 				},
 			})
 			evm.ReleaseEvm()
@@ -594,7 +595,7 @@ func BenchmarkTxType(b *testing.B) {
 				MaxPriorityFeePerGas: types.U256From(1),
 				MaxFeePerBlobGas:     types.U256From(10),
 				Input:                calldata,
-				BlobHashes:           []types.Uint256{blobHash},
+				BlobHashes:           []uint256.Int{blobHash},
 			})
 			evm.ReleaseEvm()
 		}
@@ -665,24 +666,24 @@ func BenchmarkOpcode(b *testing.B) {
 		// Contract bytecode: JUMPDEST <body> PUSH1(0) JUMP
 		code []byte
 	}{
-		{"ADD", opcodeLoop(0x60, 0x01, 0x60, 0x02, 0x01, 0x50)},           // PUSH1(1) PUSH1(2) ADD POP
-		{"MUL", opcodeLoop(0x60, 0x03, 0x60, 0x07, 0x02, 0x50)},           // PUSH1(3) PUSH1(7) MUL POP
-		{"SUB", opcodeLoop(0x60, 0x02, 0x60, 0x05, 0x03, 0x50)},           // PUSH1(2) PUSH1(5) SUB POP
-		{"DIV", opcodeLoop(0x60, 0x02, 0x60, 0x0A, 0x04, 0x50)},           // PUSH1(2) PUSH1(10) DIV POP
-		{"MOD", opcodeLoop(0x60, 0x03, 0x60, 0x0A, 0x06, 0x50)},           // PUSH1(3) PUSH1(10) MOD POP
-		{"EXP", opcodeLoop(0x60, 0x0A, 0x60, 0x02, 0x0A, 0x50)},           // PUSH1(10) PUSH1(2) EXP POP
-		{"LT", opcodeLoop(0x60, 0x02, 0x60, 0x01, 0x10, 0x50)},            // PUSH1(2) PUSH1(1) LT POP
-		{"EQ", opcodeLoop(0x60, 0x01, 0x60, 0x01, 0x14, 0x50)},            // PUSH1(1) PUSH1(1) EQ POP
-		{"ISZERO", opcodeLoop(0x60, 0x00, 0x15, 0x50)},                    // PUSH1(0) ISZERO POP
-		{"AND", opcodeLoop(0x60, 0xFF, 0x60, 0x0F, 0x16, 0x50)},           // PUSH1(0xFF) PUSH1(0x0F) AND POP
-		{"SHL", opcodeLoop(0x60, 0xFF, 0x60, 0x04, 0x1B, 0x50)},           // PUSH1(0xFF) PUSH1(4) SHL POP
-		{"SHR", opcodeLoop(0x60, 0xFF, 0x60, 0x04, 0x1C, 0x50)},           // PUSH1(0xFF) PUSH1(4) SHR POP
-		{"KECCAK256", opcodeLoop(0x60, 0x20, 0x60, 0x00, 0x20, 0x50)},     // PUSH1(32) PUSH1(0) KECCAK256 POP
-		{"MLOAD", opcodeLoop(0x60, 0x00, 0x51, 0x50)},                     // PUSH1(0) MLOAD POP
-		{"MSTORE", opcodeLoop(0x60, 0x2A, 0x60, 0x00, 0x52)},              // PUSH1(42) PUSH1(0) MSTORE
-		{"CALLDATALOAD", opcodeLoop(0x60, 0x00, 0x35, 0x50)},              // PUSH1(0) CALLDATALOAD POP
-		{"PUSH1_POP", opcodeLoop(0x60, 0x01, 0x50)},                       // PUSH1(1) POP (baseline dispatch)
-		{"DUP1_POP", opcodeLoopWithSetup([]byte{0x60, 0x00}, 0x80, 0x50)}, // setup: PUSH1(0), loop: DUP1 POP
+		{"ADD", opcodeLoop(0x60, 0x01, 0x60, 0x02, 0x01, 0x50)},              // PUSH1(1) PUSH1(2) ADD POP
+		{"MUL", opcodeLoop(0x60, 0x03, 0x60, 0x07, 0x02, 0x50)},              // PUSH1(3) PUSH1(7) MUL POP
+		{"SUB", opcodeLoop(0x60, 0x02, 0x60, 0x05, 0x03, 0x50)},              // PUSH1(2) PUSH1(5) SUB POP
+		{"DIV", opcodeLoop(0x60, 0x02, 0x60, 0x0A, 0x04, 0x50)},              // PUSH1(2) PUSH1(10) DIV POP
+		{"MOD", opcodeLoop(0x60, 0x03, 0x60, 0x0A, 0x06, 0x50)},              // PUSH1(3) PUSH1(10) MOD POP
+		{"EXP", opcodeLoop(0x60, 0x0A, 0x60, 0x02, 0x0A, 0x50)},              // PUSH1(10) PUSH1(2) EXP POP
+		{"LT", opcodeLoop(0x60, 0x02, 0x60, 0x01, 0x10, 0x50)},               // PUSH1(2) PUSH1(1) LT POP
+		{"EQ", opcodeLoop(0x60, 0x01, 0x60, 0x01, 0x14, 0x50)},               // PUSH1(1) PUSH1(1) EQ POP
+		{"ISZERO", opcodeLoop(0x60, 0x00, 0x15, 0x50)},                       // PUSH1(0) ISZERO POP
+		{"AND", opcodeLoop(0x60, 0xFF, 0x60, 0x0F, 0x16, 0x50)},              // PUSH1(0xFF) PUSH1(0x0F) AND POP
+		{"SHL", opcodeLoop(0x60, 0xFF, 0x60, 0x04, 0x1B, 0x50)},              // PUSH1(0xFF) PUSH1(4) SHL POP
+		{"SHR", opcodeLoop(0x60, 0xFF, 0x60, 0x04, 0x1C, 0x50)},              // PUSH1(0xFF) PUSH1(4) SHR POP
+		{"KECCAK256", opcodeLoop(0x60, 0x20, 0x60, 0x00, 0x20, 0x50)},        // PUSH1(32) PUSH1(0) KECCAK256 POP
+		{"MLOAD", opcodeLoop(0x60, 0x00, 0x51, 0x50)},                        // PUSH1(0) MLOAD POP
+		{"MSTORE", opcodeLoop(0x60, 0x2A, 0x60, 0x00, 0x52)},                 // PUSH1(42) PUSH1(0) MSTORE
+		{"CALLDATALOAD", opcodeLoop(0x60, 0x00, 0x35, 0x50)},                 // PUSH1(0) CALLDATALOAD POP
+		{"PUSH1_POP", opcodeLoop(0x60, 0x01, 0x50)},                          // PUSH1(1) POP (baseline dispatch)
+		{"DUP1_POP", opcodeLoopWithSetup([]byte{0x60, 0x00}, 0x80, 0x50)},    // setup: PUSH1(0), loop: DUP1 POP
 		{"SWAP1", opcodeLoopWithSetup([]byte{0x60, 0x00, 0x60, 0x00}, 0x90)}, // setup: PUSH1(0) PUSH1(0), loop: SWAP1
 	}
 
@@ -716,7 +717,7 @@ func opcodeLoopWithSetup(setup []byte, body ...byte) []byte {
 
 // solidityMappingSlot computes keccak256(abi.encode(key, slot)) for a Solidity mapping.
 // key is an address, slot is the storage slot of the mapping.
-func solidityMappingSlot(key types.Address, slot uint64) types.Uint256 {
+func solidityMappingSlot(key types.Address, slot uint64) uint256.Int {
 	var buf [64]byte
 	// key padded to 32 bytes (left-padded with zeros, address in last 20 bytes)
 	copy(buf[12:32], key[:])
@@ -789,8 +790,8 @@ var modexpInput = hexToBytes(
 	"0000000000000000000000000000000000000000000000000000000000000001" + // base_len=1
 		"0000000000000000000000000000000000000000000000000000000000000003" + // exp_len=3
 		"0000000000000000000000000000000000000000000000000000000000000020" + // mod_len=32
-		"02" +         // base=2
-		"010001" +     // exp=65537
+		"02" + // base=2
+		"010001" + // exp=65537
 		"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff") // mod=2^256-1
 
 func BenchmarkPrecompileModexp(b *testing.B) {
@@ -991,4 +992,3 @@ func BenchmarkPrecompileP256Verify(b *testing.B) {
 		precompiles.P256VerifyRun(p256Input, 10000)
 	}
 }
-

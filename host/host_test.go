@@ -1,24 +1,25 @@
 package host
 
 import (
+	"github.com/holiman/uint256"
 	"testing"
 
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/spec"
 	"github.com/Giulio2002/gevm/state"
+	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/vm"
 )
 
 // mockDB for testing.
 type mockDB struct {
 	accounts map[types.Address]*state.AccountInfo
-	storage  map[types.Address]map[types.Uint256]types.Uint256
+	storage  map[types.Address]map[uint256.Int]uint256.Int
 }
 
 func newMockDB() *mockDB {
 	return &mockDB{
 		accounts: make(map[types.Address]*state.AccountInfo),
-		storage:  make(map[types.Address]map[types.Uint256]types.Uint256),
+		storage:  make(map[types.Address]map[uint256.Int]uint256.Int),
 	}
 }
 
@@ -34,7 +35,7 @@ func (db *mockDB) CodeByHash(codeHash types.B256) (types.Bytes, error) {
 	return nil, nil
 }
 
-func (db *mockDB) Storage(address types.Address, index types.Uint256) (types.Uint256, error) {
+func (db *mockDB) Storage(address types.Address, index uint256.Int) (uint256.Int, error) {
 	if slots, ok := db.storage[address]; ok {
 		if val, found := slots[index]; found {
 			return val, nil
@@ -58,7 +59,7 @@ func (db *mockDB) BlockHash(number uint64) (types.B256, error) {
 	return types.B256{byte(number)}, nil
 }
 
-func u(v uint64) types.Uint256 { return types.U256From(v) }
+func u(v uint64) uint256.Int { return types.U256From(v) }
 
 func addr(b byte) types.Address {
 	var a types.Address
@@ -80,7 +81,7 @@ func TestEvmHostBlockInfo(t *testing.T) {
 	}, TxEnv{
 		Caller:            addr(0xCA),
 		EffectiveGasPrice: u(200),
-		BlobHashes:        []types.Uint256{u(0xAA), u(0xBB)},
+		BlobHashes:        []uint256.Int{u(0xAA), u(0xBB)},
 	}, &CfgEnv{
 		ChainId: u(1),
 	})
@@ -130,7 +131,7 @@ func TestEvmHostBalanceSLoad(t *testing.T) {
 		Balance:  u(1000),
 		CodeHash: types.KeccakEmpty,
 	}
-	db.storage[addr(1)] = map[types.Uint256]types.Uint256{
+	db.storage[addr(1)] = map[uint256.Int]uint256.Int{
 		u(10): u(42),
 	}
 
@@ -158,7 +159,7 @@ func TestEvmHostBalanceSLoad(t *testing.T) {
 
 	// SLoad via SLoadInto
 	sloadKey := u(10)
-	var val types.Uint256
+	var val uint256.Int
 	cold = host.SLoadInto(addr(1), &sloadKey, &val)
 	if val != u(42) {
 		t.Fatalf("expected storage 42, got %v", val)
@@ -183,7 +184,7 @@ func TestEvmHostSStore(t *testing.T) {
 		Balance:  u(1000),
 		CodeHash: types.KeccakEmpty,
 	}
-	db.storage[addr(1)] = map[types.Uint256]types.Uint256{
+	db.storage[addr(1)] = map[uint256.Int]uint256.Int{
 		u(10): u(42),
 	}
 
@@ -211,7 +212,7 @@ func TestEvmHostSStore(t *testing.T) {
 
 	// Verify stored value
 	verifyKey := u(10)
-	var storedVal types.Uint256
+	var storedVal uint256.Int
 	host.SLoadInto(addr(1), &verifyKey, &storedVal)
 	if storedVal != u(99) {
 		t.Fatalf("stored value should be 99, got %v", storedVal)

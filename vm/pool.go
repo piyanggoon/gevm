@@ -6,8 +6,8 @@ package vm
 import (
 	"sync"
 
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/spec"
+	"github.com/Giulio2002/gevm/types"
 )
 
 // returnBufPool pools byte slices for RETURN/REVERT output buffers.
@@ -51,7 +51,7 @@ func (a *ReturnDataArena) Reset() {
 	a.bufs = a.bufs[:0]
 }
 
-// stackPool pools Stack objects (each ~32KB: 1024 × 32-byte Uint256 words).
+// stackPool pools Stack objects (each ~32KB: 1024 × 32-byte uint256.Int words).
 var stackPool = sync.Pool{
 	New: func() any { return NewStack() },
 }

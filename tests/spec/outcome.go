@@ -10,8 +10,8 @@ import (
 	"sort"
 
 	"github.com/Giulio2002/gevm/host"
-	"github.com/Giulio2002/gevm/types"
 	gevmspec "github.com/Giulio2002/gevm/spec"
+	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/vm"
 )
 

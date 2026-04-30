@@ -272,7 +272,6 @@ func BenchmarkCREATE2_1200(b *testing.B) {
 	benchmarkCreate(b, "5b5862124f80600080f5600152600056")
 }
 
-
 // BenchmarkTransfer benchmarks a simple ETH value transfer.
 func BenchmarkTransfer(b *testing.B) {
 	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())

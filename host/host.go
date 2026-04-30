@@ -3,34 +3,35 @@
 package host
 
 import (
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/state"
+	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/vm"
+	"github.com/holiman/uint256"
 )
 
 // BlockEnv holds block-level environment data.
 type BlockEnv struct {
 	Beneficiary  types.Address
-	Timestamp    types.Uint256
-	Number       types.Uint256
-	Difficulty   types.Uint256
-	Prevrandao   *types.Uint256
-	GasLimit     types.Uint256
-	BaseFee      types.Uint256
-	BlobGasPrice types.Uint256
-	SlotNum      types.Uint256
+	Timestamp    uint256.Int
+	Number       uint256.Int
+	Difficulty   uint256.Int
+	Prevrandao   *uint256.Int
+	GasLimit     uint256.Int
+	BaseFee      uint256.Int
+	BlobGasPrice uint256.Int
+	SlotNum      uint256.Int
 }
 
 // TxEnv holds transaction-level environment data.
 type TxEnv struct {
 	Caller            types.Address
-	EffectiveGasPrice types.Uint256
-	BlobHashes        []types.Uint256
+	EffectiveGasPrice uint256.Int
+	BlobHashes        []uint256.Int
 }
 
 // CfgEnv holds chain configuration.
 type CfgEnv struct {
-	ChainId types.Uint256
+	ChainId uint256.Int
 }
 
 // EvmHost is the concrete Host implementation that delegates to Journal.
@@ -60,21 +61,21 @@ var _ vm.Host = (*EvmHost)(nil)
 // --- Block info ---
 
 func (h *EvmHost) Beneficiary() types.Address { return h.Block.Beneficiary }
-func (h *EvmHost) Timestamp() types.Uint256      { return h.Block.Timestamp }
-func (h *EvmHost) BlockNumber() types.Uint256    { return h.Block.Number }
-func (h *EvmHost) Difficulty() types.Uint256     { return h.Block.Difficulty }
-func (h *EvmHost) Prevrandao() *types.Uint256    { return h.Block.Prevrandao }
-func (h *EvmHost) GasLimit() types.Uint256       { return h.Block.GasLimit }
-func (h *EvmHost) BaseFee() types.Uint256        { return h.Block.BaseFee }
-func (h *EvmHost) BlobGasPrice() types.Uint256   { return h.Block.BlobGasPrice }
-func (h *EvmHost) SlotNum() types.Uint256        { return h.Block.SlotNum }
-func (h *EvmHost) ChainId() types.Uint256        { return h.Cfg.ChainId }
+func (h *EvmHost) Timestamp() uint256.Int     { return h.Block.Timestamp }
+func (h *EvmHost) BlockNumber() uint256.Int   { return h.Block.Number }
+func (h *EvmHost) Difficulty() uint256.Int    { return h.Block.Difficulty }
+func (h *EvmHost) Prevrandao() *uint256.Int   { return h.Block.Prevrandao }
+func (h *EvmHost) GasLimit() uint256.Int      { return h.Block.GasLimit }
+func (h *EvmHost) BaseFee() uint256.Int       { return h.Block.BaseFee }
+func (h *EvmHost) BlobGasPrice() uint256.Int  { return h.Block.BlobGasPrice }
+func (h *EvmHost) SlotNum() uint256.Int       { return h.Block.SlotNum }
+func (h *EvmHost) ChainId() uint256.Int       { return h.Cfg.ChainId }
 
 // --- Tx info ---
 
-func (h *EvmHost) Caller() types.Address         { return h.Tx.Caller }
-func (h *EvmHost) EffectiveGasPrice() types.Uint256 { return h.Tx.EffectiveGasPrice }
-func (h *EvmHost) BlobHash(index int) *types.Uint256 {
+func (h *EvmHost) Caller() types.Address          { return h.Tx.Caller }
+func (h *EvmHost) EffectiveGasPrice() uint256.Int { return h.Tx.EffectiveGasPrice }
+func (h *EvmHost) BlobHash(index int) *uint256.Int {
 	if index < 0 || index >= len(h.Tx.BlobHashes) {
 		return nil
 	}
@@ -84,7 +85,7 @@ func (h *EvmHost) BlobHash(index int) *types.Uint256 {
 
 // --- Account access (delegated to Journal) ---
 
-func (h *EvmHost) Balance(addr types.Address) (types.Uint256, bool) {
+func (h *EvmHost) Balance(addr types.Address) (uint256.Int, bool) {
 	result, err := h.Journal.LoadAccount(addr)
 	if err != nil {
 		return types.U256Zero, false
@@ -168,7 +169,7 @@ func (h *EvmHost) LoadAccountCode(addr types.Address) vm.AccountCodeLoad {
 	}
 }
 
-func (h *EvmHost) SelfBalance(addr types.Address) types.Uint256 {
+func (h *EvmHost) SelfBalance(addr types.Address) uint256.Int {
 	if acc, ok := h.Journal.State[addr]; ok {
 		return acc.Info.Balance
 	}
@@ -177,7 +178,7 @@ func (h *EvmHost) SelfBalance(addr types.Address) types.Uint256 {
 
 // --- Storage access ---
 
-func (h *EvmHost) SLoadInto(addr types.Address, key *types.Uint256, out *types.Uint256) bool {
+func (h *EvmHost) SLoadInto(addr types.Address, key *uint256.Int, out *uint256.Int) bool {
 	isCold, err := h.Journal.SLoadInto(addr, key, out)
 	if err != nil {
 		*out = types.U256Zero
@@ -186,7 +187,7 @@ func (h *EvmHost) SLoadInto(addr types.Address, key *types.Uint256, out *types.U
 	return isCold
 }
 
-func (h *EvmHost) SStore(addr types.Address, key *types.Uint256, value *types.Uint256, out *vm.SStoreResult) {
+func (h *EvmHost) SStore(addr types.Address, key *uint256.Int, value *uint256.Int, out *vm.SStoreResult) {
 	err := h.Journal.SStoreInto(addr, key, value,
 		&out.OriginalValue, &out.PresentValue, &out.NewValue, &out.IsCold)
 	if err != nil {
@@ -194,17 +195,17 @@ func (h *EvmHost) SStore(addr types.Address, key *types.Uint256, value *types.Ui
 	}
 }
 
-func (h *EvmHost) TLoad(addr types.Address, key types.Uint256) types.Uint256 {
+func (h *EvmHost) TLoad(addr types.Address, key uint256.Int) uint256.Int {
 	return h.Journal.TLoad(addr, key)
 }
 
-func (h *EvmHost) TStore(addr types.Address, key, value types.Uint256) {
+func (h *EvmHost) TStore(addr types.Address, key, value uint256.Int) {
 	h.Journal.TStore(addr, key, value)
 }
 
 // --- Block hash ---
 
-func (h *EvmHost) BlockHash(number types.Uint256) types.B256 {
+func (h *EvmHost) BlockHash(number uint256.Int) types.B256 {
 	if number[1] != 0 || number[2] != 0 || number[3] != 0 {
 		return types.B256Zero
 	}

@@ -1,13 +1,14 @@
 package state
 
 import (
+	"github.com/holiman/uint256"
 	"testing"
 
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/spec"
+	"github.com/Giulio2002/gevm/types"
 )
 
-func u256(v uint64) types.Uint256 {
+func u256(v uint64) uint256.Int {
 	return types.U256From(v)
 }
 

@@ -3,6 +3,7 @@ package types
 import (
 	"encoding/hex"
 	"fmt"
+	"github.com/holiman/uint256"
 
 	keccak "github.com/Giulio2002/fastkeccak"
 )
@@ -29,8 +30,8 @@ func (a *Address) IsZero() bool {
 	return *a == AddressZero
 }
 
-// ToU256 converts an Address to Uint256 (right-aligned, big-endian in the 32-byte representation).
-func (a *Address) ToU256() Uint256 {
+// ToU256 converts an Address to uint256.Int (right-aligned, big-endian in the 32-byte representation).
+func (a *Address) ToU256() uint256.Int {
 	var b [32]byte
 	copy(b[12:], a[:]) // Address occupies the low 20 bytes (left-padded with zeros)
 	return U256FromBytes32(b)
@@ -78,14 +79,14 @@ func (b *B256) String() string {
 	return b.Hex()
 }
 
-// ToU256 converts a B256 (big-endian) to Uint256.
-func (b *B256) ToU256() Uint256 {
+// ToU256 converts a B256 (big-endian) to uint256.Int.
+func (b *B256) ToU256() uint256.Int {
 	return U256FromBytes32(*b)
 }
 
-// B256FromU256 converts a Uint256 to B256 (big-endian).
-func B256FromU256(u Uint256) B256 {
-	return B256(u.ToBytes32())
+// B256FromU256 converts a uint256.Int to B256 (big-endian).
+func B256FromU256(u uint256.Int) B256 {
+	return B256(u.Bytes32())
 }
 
 // Bytes is a byte slice wrapper.

@@ -2,8 +2,8 @@
 package vm
 
 import (
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/spec"
+	"github.com/Giulio2002/gevm/types"
 )
 
 // opAddress — PushVal body.
@@ -21,7 +21,7 @@ func opBalance(interp *Interpreter, host Host) {
 		return
 	}
 	top := &s.data[s.top-1]
-	addr := top.ToAddress()
+	addr := types.U256ToAddress(top)
 	balance, isCold := host.Balance(addr)
 	if interp.RuntimeFlag.ForkID.IsEnabledIn(spec.Berlin) && isCold {
 		cost := interp.GasParams.ColdAccountAdditionalCost()
@@ -59,7 +59,7 @@ func opCallvalue(interp *Interpreter) {
 func opCalldataload(interp *Interpreter) {
 	s := interp.Stack
 	top := &s.data[s.top-1]
-	offset := top.AsUsizeSaturated()
+	offset := types.U256AsUsizeSaturated(top)
 	input := interp.Input.Input
 	var word [32]byte
 	if offset < uint64(len(input)) {
@@ -110,7 +110,7 @@ func opCalldatacopy(interp *Interpreter) {
 	if !interp.ResizeMemory(memOffset, length) {
 		return
 	}
-	dataOffsetSat := dataOffsetVal.AsUsizeSaturated()
+	dataOffsetSat := types.U256AsUsizeSaturated(&dataOffsetVal)
 	dataOffset := int(dataOffsetSat)
 	if dataOffsetSat > uint64(maxInt) {
 		dataOffset = maxInt
@@ -155,7 +155,7 @@ func opCodecopy(interp *Interpreter) {
 	if !interp.ResizeMemory(memOffset, length) {
 		return
 	}
-	codeOffsetSat := codeOffsetVal.AsUsizeSaturated()
+	codeOffsetSat := types.U256AsUsizeSaturated(&codeOffsetVal)
 	codeOffset := int(codeOffsetSat)
 	if codeOffsetSat > uint64(maxInt) {
 		codeOffset = maxInt
@@ -178,7 +178,7 @@ func opExtcodesize(interp *Interpreter, host Host) {
 		return
 	}
 	top := &s.data[s.top-1]
-	addr := top.ToAddress()
+	addr := types.U256ToAddress(top)
 	size, isCold := host.CodeSize(addr)
 	if interp.RuntimeFlag.ForkID.IsEnabledIn(spec.Berlin) && isCold {
 		cost := interp.GasParams.ColdAccountAdditionalCost()
@@ -202,7 +202,7 @@ func opExtcodecopy(interp *Interpreter, host Host) {
 	memOffsetVal := s.data[s.top+2]
 	codeOffsetVal := s.data[s.top+1]
 	lenVal := s.data[s.top]
-	addr := addrVal.ToAddress()
+	addr := types.U256ToAddress(&addrVal)
 	length, ok := interp.asUsizeOrFail(lenVal)
 	if !ok {
 		return
@@ -230,7 +230,7 @@ func opExtcodecopy(interp *Interpreter, host Host) {
 	if !interp.ResizeMemory(memOffset, length) {
 		return
 	}
-	codeOffsetSat := codeOffsetVal.AsUsizeSaturated()
+	codeOffsetSat := types.U256AsUsizeSaturated(&codeOffsetVal)
 	codeOffset := int(codeOffsetSat)
 	if codeOffsetSat > uint64(maxInt) {
 		codeOffset = maxInt
@@ -295,7 +295,7 @@ func opExtcodehash(interp *Interpreter, host Host) {
 		return
 	}
 	top := &s.data[s.top-1]
-	addr := top.ToAddress()
+	addr := types.U256ToAddress(top)
 	hash, isCold := host.CodeHash(addr)
 	if interp.RuntimeFlag.ForkID.IsEnabledIn(spec.Berlin) && isCold {
 		cost := interp.GasParams.ColdAccountAdditionalCost()

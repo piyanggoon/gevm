@@ -2,6 +2,7 @@ package vm
 
 import (
 	"fmt"
+	"github.com/holiman/uint256"
 	"strings"
 
 	"github.com/Giulio2002/gevm/types"
@@ -13,7 +14,7 @@ const StackLimit = 1024
 // Stack is the EVM stack with StackLimit capacity.
 // Uses a fixed-size array with a top pointer to avoid slice header manipulation.
 type Stack struct {
-	data [StackLimit]types.Uint256
+	data [StackLimit]uint256.Int
 	top  int
 }
 
@@ -33,7 +34,7 @@ func (s *Stack) IsEmpty() bool {
 }
 
 // Data returns a slice of the active portion of the stack.
-func (s *Stack) Data() []types.Uint256 {
+func (s *Stack) Data() []uint256.Int {
 	return s.data[:s.top]
 }
 
@@ -43,7 +44,7 @@ func (s *Stack) Clear() {
 }
 
 // Push pushes a value onto the stack. Returns false if stack overflow.
-func (s *Stack) Push(value types.Uint256) bool {
+func (s *Stack) Push(value uint256.Int) bool {
 	if s.top == StackLimit {
 		return false
 	}
@@ -53,7 +54,7 @@ func (s *Stack) Push(value types.Uint256) bool {
 }
 
 // Pop removes and returns the top value. Returns false if empty.
-func (s *Stack) Pop() (types.Uint256, bool) {
+func (s *Stack) Pop() (uint256.Int, bool) {
 	if s.top == 0 {
 		return types.U256Zero, false
 	}
@@ -63,14 +64,14 @@ func (s *Stack) Pop() (types.Uint256, bool) {
 
 // PopUnsafe pops the top value without bounds checking.
 // Caller must ensure the stack is non-empty.
-func (s *Stack) PopUnsafe() types.Uint256 {
+func (s *Stack) PopUnsafe() uint256.Int {
 	s.top--
 	return s.data[s.top]
 }
 
 // Top returns a pointer to the top of the stack.
 // Returns nil if the stack is empty.
-func (s *Stack) Top() *types.Uint256 {
+func (s *Stack) Top() *uint256.Int {
 	if s.top == 0 {
 		return nil
 	}
@@ -79,18 +80,18 @@ func (s *Stack) Top() *types.Uint256 {
 
 // TopUnsafe returns a pointer to the top of the stack without bounds checking.
 // Caller must ensure the stack is non-empty.
-func (s *Stack) TopUnsafe() *types.Uint256 {
+func (s *Stack) TopUnsafe() *uint256.Int {
 	return &s.data[s.top-1]
 }
 
 // Popn pops N values from the stack and returns them.
 // Values are returned in pop order: [0] = top, [1] = second, etc.
 // Returns nil if there are fewer than N items.
-func (s *Stack) Popn(n int) []types.Uint256 {
+func (s *Stack) Popn(n int) []uint256.Int {
 	if s.top < n {
 		return nil
 	}
-	result := make([]types.Uint256, n)
+	result := make([]uint256.Int, n)
 	for i := 0; i < n; i++ {
 		result[i] = s.PopUnsafe()
 	}
@@ -98,7 +99,7 @@ func (s *Stack) Popn(n int) []types.Uint256 {
 }
 
 // Pop1 pops 1 value from the stack. Returns false if underflow.
-func (s *Stack) Pop1() (types.Uint256, bool) {
+func (s *Stack) Pop1() (uint256.Int, bool) {
 	if s.top < 1 {
 		return types.U256Zero, false
 	}
@@ -106,7 +107,7 @@ func (s *Stack) Pop1() (types.Uint256, bool) {
 }
 
 // Pop2 pops 2 values from the stack. Returns false if underflow.
-func (s *Stack) Pop2() (types.Uint256, types.Uint256, bool) {
+func (s *Stack) Pop2() (uint256.Int, uint256.Int, bool) {
 	if s.top < 2 {
 		return types.U256Zero, types.U256Zero, false
 	}
@@ -116,7 +117,7 @@ func (s *Stack) Pop2() (types.Uint256, types.Uint256, bool) {
 }
 
 // Pop3 pops 3 values from the stack. Returns false if underflow.
-func (s *Stack) Pop3() (types.Uint256, types.Uint256, types.Uint256, bool) {
+func (s *Stack) Pop3() (uint256.Int, uint256.Int, uint256.Int, bool) {
 	if s.top < 3 {
 		return types.U256Zero, types.U256Zero, types.U256Zero, false
 	}
@@ -128,11 +129,11 @@ func (s *Stack) Pop3() (types.Uint256, types.Uint256, types.Uint256, bool) {
 
 // PopnTop pops N values and returns a pointer to the new top.
 // Returns nil if there are fewer than N+1 items.
-func (s *Stack) PopnTop(n int) ([]types.Uint256, *types.Uint256) {
+func (s *Stack) PopnTop(n int) ([]uint256.Int, *uint256.Int) {
 	if s.top < n+1 {
 		return nil, nil
 	}
-	result := make([]types.Uint256, n)
+	result := make([]uint256.Int, n)
 	for i := 0; i < n; i++ {
 		result[i] = s.PopUnsafe()
 	}
@@ -140,7 +141,7 @@ func (s *Stack) PopnTop(n int) ([]types.Uint256, *types.Uint256) {
 }
 
 // Pop1Top pops 1 value and returns a pointer to the new top.
-func (s *Stack) Pop1Top() (types.Uint256, *types.Uint256, bool) {
+func (s *Stack) Pop1Top() (uint256.Int, *uint256.Int, bool) {
 	if s.top < 2 {
 		return types.U256Zero, nil, false
 	}
@@ -149,7 +150,7 @@ func (s *Stack) Pop1Top() (types.Uint256, *types.Uint256, bool) {
 }
 
 // Pop2Top pops 2 values and returns a pointer to the new top.
-func (s *Stack) Pop2Top() (types.Uint256, types.Uint256, *types.Uint256, bool) {
+func (s *Stack) Pop2Top() (uint256.Int, uint256.Int, *uint256.Int, bool) {
 	if s.top < 3 {
 		return types.U256Zero, types.U256Zero, nil, false
 	}
@@ -159,7 +160,7 @@ func (s *Stack) Pop2Top() (types.Uint256, types.Uint256, *types.Uint256, bool) {
 }
 
 // Peek returns the value at the given index from the top (0 = top).
-func (s *Stack) Peek(noFromTop int) (types.Uint256, bool) {
+func (s *Stack) Peek(noFromTop int) (uint256.Int, bool) {
 	if s.top <= noFromTop {
 		return types.U256Zero, false
 	}
@@ -201,7 +202,7 @@ func (s *Stack) Exchange(n, m int) bool {
 }
 
 // Set sets the value at the given index from the top.
-func (s *Stack) Set(noFromTop int, val types.Uint256) bool {
+func (s *Stack) Set(noFromTop int, val uint256.Int) bool {
 	if s.top <= noFromTop {
 		return false
 	}
@@ -209,7 +210,7 @@ func (s *Stack) Set(noFromTop int, val types.Uint256) bool {
 	return true
 }
 
-// PushSlice pushes a big-endian byte slice onto the stack as a single Uint256 word.
+// PushSlice pushes a big-endian byte slice onto the stack as a single uint256.Int word.
 // Returns false if stack overflow.
 func (s *Stack) PushSlice(slice []byte) bool {
 	if len(slice) == 0 {

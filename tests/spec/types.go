@@ -3,9 +3,10 @@ package spec
 
 import (
 	"encoding/json"
+	"github.com/holiman/uint256"
 
-	"github.com/Giulio2002/gevm/types"
 	gevmspec "github.com/Giulio2002/gevm/spec"
+	"github.com/Giulio2002/gevm/types"
 )
 
 // TestSuite is the top-level test file: a map of test name → TestUnit.
@@ -28,7 +29,7 @@ type TestUnit struct {
 }
 
 // ChainId returns the chain ID from config or env (new format uses config.chainid).
-func (u *TestUnit) ChainId() types.Uint256 {
+func (u *TestUnit) ChainId() uint256.Int {
 	if u.Config != nil && u.Config.ChainId != nil {
 		return u.Config.ChainId.V
 	}
@@ -95,12 +96,12 @@ type TransactionParts struct {
 
 // TestAuthorization is an EIP-7702 authorization entry in test fixtures.
 type TestAuthorization struct {
-	ChainId HexU256 `json:"chainId"`
-	Address HexAddr `json:"address"`
-	Nonce   HexU256 `json:"nonce"`
-	V       HexU256 `json:"v"`
-	R       HexB256 `json:"r"`
-	S       HexB256 `json:"s"`
+	ChainId HexU256  `json:"chainId"`
+	Address HexAddr  `json:"address"`
+	Nonce   HexU256  `json:"nonce"`
+	V       HexU256  `json:"v"`
+	R       HexB256  `json:"r"`
+	S       HexB256  `json:"s"`
 	Signer  *HexAddr `json:"signer"`
 	YParity *HexU256 `json:"yParity"`
 }

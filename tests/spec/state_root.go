@@ -3,17 +3,18 @@
 package spec
 
 import (
-	"github.com/Giulio2002/gevm/types"
 	gevmspec "github.com/Giulio2002/gevm/spec"
 	"github.com/Giulio2002/gevm/state"
+	"github.com/Giulio2002/gevm/types"
+	"github.com/holiman/uint256"
 )
 
 // accountForRoot holds the final state of an account for root computation.
 type accountForRoot struct {
 	nonce    uint64
-	balance  types.Uint256
+	balance  uint256.Int
 	codeHash types.B256
-	storage  map[types.Uint256]types.Uint256 // only non-zero slots
+	storage  map[uint256.Int]uint256.Int // only non-zero slots
 }
 
 // StateRoot computes the post-execution state root hash.
@@ -43,8 +44,8 @@ func collectAccounts(db *MemDB, journal *state.Journal, forkID gevmspec.ForkID) 
 	result := make(map[types.Address]*accountForRoot)
 
 	// Step 1: Load all pre-state accounts.
-	db.ForEachAccount(func(addr types.Address, info state.AccountInfo, storage map[types.Uint256]types.Uint256) {
-		st := make(map[types.Uint256]types.Uint256, len(storage))
+	db.ForEachAccount(func(addr types.Address, info state.AccountInfo, storage map[uint256.Int]uint256.Int) {
+		st := make(map[uint256.Int]uint256.Int, len(storage))
 		for k, v := range storage {
 			if !v.IsZero() {
 				st[k] = v
@@ -73,7 +74,7 @@ func collectAccounts(db *MemDB, journal *state.Journal, forkID gevmspec.ForkID) 
 			nonce:    acc.Info.Nonce,
 			balance:  acc.Info.Balance,
 			codeHash: acc.Info.CodeHash,
-			storage:  make(map[types.Uint256]types.Uint256),
+			storage:  make(map[uint256.Int]uint256.Int),
 		}
 
 		// Start with pre-state storage (if any).
@@ -101,14 +102,14 @@ func collectAccounts(db *MemDB, journal *state.Journal, forkID gevmspec.ForkID) 
 }
 
 // storageRoot computes the MPT root of an account's storage trie.
-func storageRoot(storage map[types.Uint256]types.Uint256) types.B256 {
+func storageRoot(storage map[uint256.Int]uint256.Int) types.B256 {
 	if len(storage) == 0 {
 		return emptyTrieRoot
 	}
 
 	entries := make([]mptEntry, 0, len(storage))
 	for slot, value := range storage {
-		slotBytes := slot.ToBytes32()
+		slotBytes := slot.Bytes32()
 		slotHash := types.Keccak256(slotBytes[:])
 		entries = append(entries, mptEntry{
 			keyNibbles: keyToNibbles(slotHash),
@@ -120,7 +121,7 @@ func storageRoot(storage map[types.Uint256]types.Uint256) types.B256 {
 }
 
 // rlpEncodeAccount encodes [nonce, balance, storageRoot, codeHash] as RLP.
-func rlpEncodeAccount(nonce uint64, balance types.Uint256, sRoot, codeHash types.B256) []byte {
+func rlpEncodeAccount(nonce uint64, balance uint256.Int, sRoot, codeHash types.B256) []byte {
 	return RlpEncodeList([][]byte{
 		RlpEncodeUint64(nonce),
 		RlpEncodeU256(balance),

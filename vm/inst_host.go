@@ -1,8 +1,8 @@
 package vm
 
 import (
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/spec"
+	"github.com/Giulio2002/gevm/types"
 )
 
 // logNImpl implements LOG0-LOG4: creates a log entry with N topics.
@@ -29,7 +29,7 @@ func logNImpl(interp *Interpreter, host Host, n int) {
 			interp.HaltUnderflow()
 			return
 		}
-		topics[i] = val.ToBytes32()
+		topics[i] = val.Bytes32()
 	}
 	length, ok := interp.asUsizeOrFail(lenVal)
 	if !ok {

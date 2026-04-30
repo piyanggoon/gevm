@@ -3,12 +3,13 @@
 package host
 
 import (
+	"github.com/holiman/uint256"
 	"sync"
 
 	"github.com/Giulio2002/gevm/precompiles"
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/spec"
 	"github.com/Giulio2002/gevm/state"
+	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/vm"
 )
 
@@ -34,12 +35,12 @@ const (
 // AccessListItem describes a single access list entry.
 type AccessListItem struct {
 	Address     types.Address
-	StorageKeys []types.Uint256
+	StorageKeys []uint256.Int
 }
 
 // Authorization is an EIP-7702 authorization tuple.
 type Authorization struct {
-	ChainId types.Uint256
+	ChainId uint256.Int
 	Address types.Address
 	Nonce   uint64
 	YParity uint8
@@ -53,17 +54,17 @@ type Transaction struct {
 	TxType               TxType
 	Caller               types.Address
 	To                   types.Address // Only valid for TxKindCall
-	Value                types.Uint256
+	Value                uint256.Int
 	Input                types.Bytes // Calldata for CALL, initcode for CREATE
 	GasLimit             uint64
-	GasPrice             types.Uint256 // Legacy gas price
-	MaxFeePerGas         types.Uint256 // EIP-1559: max total fee per gas
-	MaxPriorityFeePerGas types.Uint256 // EIP-1559: max tip per gas
-	MaxFeePerBlobGas     types.Uint256 // EIP-4844: max fee per blob gas
+	GasPrice             uint256.Int // Legacy gas price
+	MaxFeePerGas         uint256.Int // EIP-1559: max total fee per gas
+	MaxPriorityFeePerGas uint256.Int // EIP-1559: max tip per gas
+	MaxFeePerBlobGas     uint256.Int // EIP-4844: max fee per blob gas
 	Nonce                uint64
-	AccessList           []AccessListItem     // EIP-2930 access list
-	BlobHashes           []types.Uint256 // EIP-4844 blob versioned hashes
-	AuthorizationList    []Authorization      // EIP-7702 authorization list
+	AccessList           []AccessListItem // EIP-2930 access list
+	BlobHashes           []uint256.Int    // EIP-4844 blob versioned hashes
+	AuthorizationList    []Authorization  // EIP-7702 authorization list
 }
 
 // ResultKind distinguishes execution outcomes.
@@ -84,7 +85,7 @@ type ExecutionResult struct {
 	Output          types.Bytes
 	Logs            []state.Log
 	CreatedAddr     *types.Address // Only for successful CREATE
-	ValidationError bool                // True if failure was during tx validation (before execution)
+	ValidationError bool           // True if failure was during tx validation (before execution)
 }
 
 // IsSuccess returns true if execution succeeded.
@@ -128,10 +129,10 @@ type Evm struct {
 	TxEnv          TxEnv
 	Cfg            CfgEnv
 	ForkID         spec.ForkID
-	Runner         vm.Runner                       // pluggable interpreter (nil = DefaultRunner)
-	ReturnAlloc    vm.ReturnDataArena              // arena for pooling RETURN/REVERT output buffers
-	host           EvmHost                         // reusable host embedded in pooled Evm (avoids heap escape)
-	JumpTableCache map[types.B256][]byte      // cached JUMPDEST bitmaps, persists across pooled reuse
+	Runner         vm.Runner             // pluggable interpreter (nil = DefaultRunner)
+	ReturnAlloc    vm.ReturnDataArena    // arena for pooling RETURN/REVERT output buffers
+	host           EvmHost               // reusable host embedded in pooled Evm (avoids heap escape)
+	JumpTableCache map[types.B256][]byte // cached JUMPDEST bitmaps, persists across pooled reuse
 
 	// Embedded root frame objects: avoid pool Get/Put for depth-0 calls.
 	// Initialized lazily on first use, then reused across pooled Evm reuse.
@@ -226,23 +227,23 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 	case TxTypeLegacy, TxTypeEIP2930:
 		// Legacy/EIP-2930: gas price must be >= basefee
 		if evm.ForkID.IsEnabledIn(spec.London) {
-			if tx.GasPrice.Lt(evm.Block.BaseFee) {
+			if tx.GasPrice.Lt(&evm.Block.BaseFee) {
 				return haltResult(vm.InstructionResultGasPriceBelowBaseFee)
 			}
 		}
 		effectiveGasPrice = tx.GasPrice
 	case TxTypeEIP1559, TxTypeEIP4844, TxTypeEIP7702:
 		// EIP-1559+: maxPriorityFeePerGas must not exceed maxFeePerGas
-		if tx.MaxPriorityFeePerGas.Gt(tx.MaxFeePerGas) {
+		if tx.MaxPriorityFeePerGas.Gt(&tx.MaxFeePerGas) {
 			return haltResult(vm.InstructionResultPriorityFeeTooHigh)
 		}
 		// Effective gas price = min(maxFeePerGas, basefee + maxPriorityFeePerGas)
-		effectiveGasPrice = evm.Block.BaseFee.Add(tx.MaxPriorityFeePerGas)
-		if effectiveGasPrice.Gt(tx.MaxFeePerGas) {
+		effectiveGasPrice.Add(&evm.Block.BaseFee, &tx.MaxPriorityFeePerGas)
+		if effectiveGasPrice.Gt(&tx.MaxFeePerGas) {
 			effectiveGasPrice = tx.MaxFeePerGas
 		}
 		// Effective gas price must be >= basefee
-		if effectiveGasPrice.Lt(evm.Block.BaseFee) {
+		if effectiveGasPrice.Lt(&evm.Block.BaseFee) {
 			return haltResult(vm.InstructionResultGasPriceBelowBaseFee)
 		}
 	}
@@ -250,7 +251,7 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 	// EIP-4844: validate blob transaction
 	if tx.TxType == TxTypeEIP4844 {
 		// Blob gas price must not exceed max fee per blob gas
-		if evm.Block.BlobGasPrice.Gt(tx.MaxFeePerBlobGas) {
+		if evm.Block.BlobGasPrice.Gt(&tx.MaxFeePerBlobGas) {
 			return haltResult(vm.InstructionResultBlobGasPriceTooHigh)
 		}
 		// Must have at least one blob
@@ -267,7 +268,7 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 		}
 		// All blob hashes must be versioned with 0x01
 		for _, h := range tx.BlobHashes {
-			b32 := h.ToBytes32()
+			b32 := h.Bytes32()
 			if b32[0] != 0x01 {
 				return haltResult(vm.InstructionResultInvalidBlobVersion)
 			}
@@ -284,7 +285,7 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 	}
 
 	// Check tx gas limit <= block gas limit
-	blockGasLimit := evm.Block.GasLimit.AsUsize()
+	blockGasLimit := types.U256AsUsize(&evm.Block.GasLimit)
 	if tx.GasLimit > blockGasLimit {
 		return haltResult(vm.InstructionResultGasLimitTooHigh)
 	}
@@ -330,7 +331,7 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 
 	// Balance check: caller must have balance >= max_gas_cost + value
 	// For EIP-1559: use maxFeePerGas for balance reservation (not effective price)
-	var maxGasPrice types.Uint256
+	var maxGasPrice uint256.Int
 	switch tx.TxType {
 	case TxTypeEIP1559, TxTypeEIP4844, TxTypeEIP7702:
 		maxGasPrice = tx.MaxFeePerGas
@@ -338,43 +339,43 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 		maxGasPrice = tx.GasPrice
 	}
 	gasLimitU := types.U256From(tx.GasLimit)
-	maxFee := maxGasPrice.Mul(gasLimitU)
+	maxFee := types.Mul(&maxGasPrice, &gasLimitU)
 	// Check for overflow: if gasPrice * gasLimit < gasPrice (and gasLimit > 0), overflow occurred
-	if tx.GasLimit > 0 && maxFee.Lt(maxGasPrice) {
+	if tx.GasLimit > 0 && maxFee.Lt(&maxGasPrice) {
 		return haltResult(vm.InstructionResultOutOfFunds)
 	}
 	// EIP-4844: include max blob gas cost in balance check
 	if tx.TxType == TxTypeEIP4844 && len(tx.BlobHashes) > 0 {
 		totalBlobGas := types.U256From(uint64(len(tx.BlobHashes)) * 131072)
-		maxBlobCost := tx.MaxFeePerBlobGas.Mul(totalBlobGas)
-		maxFee = maxFee.Add(maxBlobCost)
+		maxBlobCost := types.Mul(&tx.MaxFeePerBlobGas, &totalBlobGas)
+		maxFee.Add(&maxFee, &maxBlobCost)
 		// Overflow check
-		if maxFee.Lt(maxBlobCost) {
+		if maxFee.Lt(&maxBlobCost) {
 			return haltResult(vm.InstructionResultOutOfFunds)
 		}
 	}
-	totalCost := maxFee.Add(tx.Value)
+	totalCost := types.Add(&maxFee, &tx.Value)
 	// Check for overflow in addition: if totalCost < maxFee, overflow occurred
-	if totalCost.Lt(maxFee) {
+	if totalCost.Lt(&maxFee) {
 		return haltResult(vm.InstructionResultOutOfFunds)
 	}
-	if callerAcc.Info.Balance.Lt(totalCost) {
+	if callerAcc.Info.Balance.Lt(&totalCost) {
 		return haltResult(vm.InstructionResultOutOfFunds)
 	}
 
 	// Deduct gas costs from caller balance (using effective gas price).
 	// Only gas costs are deducted here; value transfer happens during CALL/CREATE execution.
-	gasDeduction := effectiveGasPrice.Mul(types.U256From(tx.GasLimit))
+	gasDeduction := types.Mul(&effectiveGasPrice, &gasLimitU)
 
 	// EIP-4844: deduct blob gas cost
-	var blobGasCost types.Uint256
+	var blobGasCost uint256.Int
 	if tx.TxType == TxTypeEIP4844 && len(tx.BlobHashes) > 0 {
 		totalBlobGas := types.U256From(uint64(len(tx.BlobHashes)) * 131072) // GAS_PER_BLOB = 2^17
-		blobGasCost = evm.Block.BlobGasPrice.Mul(totalBlobGas)
-		gasDeduction = gasDeduction.Add(blobGasCost)
+		blobGasCost = types.Mul(&evm.Block.BlobGasPrice, &totalBlobGas)
+		gasDeduction.Add(&gasDeduction, &blobGasCost)
 	}
 
-	callerAcc.Info.Balance = callerAcc.Info.Balance.Sub(gasDeduction)
+	callerAcc.Info.Balance.Sub(&callerAcc.Info.Balance, &gasDeduction)
 
 	// Increment nonce (only for CALL; CREATE bumps nonce in executeCreate)
 	if tx.Kind == TxKindCall {
@@ -524,9 +525,10 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 	if gas.Refunded() > 0 {
 		reimburseGas += uint64(gas.Refunded())
 	}
-	refundAmount := effectiveGasPrice.Mul(types.U256From(reimburseGas))
+	reimburseGasU := types.U256From(reimburseGas)
+	refundAmount := types.Mul(&effectiveGasPrice, &reimburseGasU)
 	callerReload, _ := evm.Journal.LoadAccount(tx.Caller)
-	callerReload.Data.Info.Balance = callerReload.Data.Info.Balance.Add(refundAmount)
+	callerReload.Data.Info.Balance.Add(&callerReload.Data.Info.Balance, &refundAmount)
 
 	// Step 4: Reward beneficiary (coinbase).
 	// Uses gas.Used() = gas.Spent() - refunded (includes intrinsic gas).
@@ -671,21 +673,22 @@ func EIP7702Address(code []byte) (types.Address, bool) {
 }
 
 // rewardBeneficiary pays the coinbase for transaction processing.
-func (evm *Evm) rewardBeneficiary(gasPrice types.Uint256, gasUsed uint64) {
+func (evm *Evm) rewardBeneficiary(gasPrice uint256.Int, gasUsed uint64) {
 	// Calculate effective tip before loading the account.
-	var effectivePrice types.Uint256
+	var effectivePrice uint256.Int
 	if evm.ForkID.IsEnabledIn(spec.London) {
 		// London+: base fee is burned, only tip goes to coinbase
 		baseFee := evm.Block.BaseFee
-		if gasPrice.Gt(baseFee) {
-			effectivePrice = gasPrice.Sub(baseFee)
+		if gasPrice.Gt(&baseFee) {
+			effectivePrice.Sub(&gasPrice, &baseFee)
 		}
 		// else effectivePrice stays zero
 	} else {
 		effectivePrice = gasPrice
 	}
 
-	reward := effectivePrice.Mul(types.U256From(gasUsed))
+	gasUsedU := types.U256From(gasUsed)
+	reward := types.Mul(&effectivePrice, &gasUsedU)
 
 	// Skip loading the beneficiary account if reward is zero.
 	// LoadAccount without a subsequent touch has no observable state effect.
@@ -698,7 +701,7 @@ func (evm *Evm) rewardBeneficiary(gasPrice types.Uint256, gasUsed uint64) {
 	if err != nil {
 		return
 	}
-	beneficiaryResult.Data.Info.Balance = beneficiaryResult.Data.Info.Balance.Add(reward)
+	beneficiaryResult.Data.Info.Balance.Add(&beneficiaryResult.Data.Info.Balance, &reward)
 }
 
 // applyEIP7702AuthList processes the authorization list for EIP-7702 transactions.
@@ -817,11 +820,11 @@ func recoverEIP7702Authority(auth *Authorization) (types.Address, bool) {
 }
 
 // rlpEncodeU256Compact RLP-encodes a U256 as a big-endian integer (minimal encoding).
-func rlpEncodeU256Compact(v types.Uint256) []byte {
+func rlpEncodeU256Compact(v uint256.Int) []byte {
 	if v.IsZero() {
 		return []byte{0x80}
 	}
-	b := v.ToBytes32()
+	b := v.Bytes32()
 	// Strip leading zeros
 	i := 0
 	for i < 32 && b[i] == 0 {

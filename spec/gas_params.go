@@ -1,6 +1,7 @@
 package spec
 
 import (
+	"github.com/holiman/uint256"
 	"math/bits"
 
 	"github.com/Giulio2002/gevm/types"
@@ -184,7 +185,7 @@ func newGasParams(spec ForkID) *GasParams {
 // --- Gas calculation methods ---
 
 // ExpCost calculates the EXP opcode gas cost for a given exponent.
-func (g *GasParams) ExpCost(power types.Uint256) uint64 {
+func (g *GasParams) ExpCost(power uint256.Int) uint64 {
 	if power.IsZero() {
 		return 0
 	}
@@ -255,18 +256,22 @@ func (g *GasParams) SstoreResetRefund() uint64 {
 
 // SStoreResult holds the values needed for SSTORE gas/refund calculation.
 type SStoreResult struct {
-	OriginalValue types.Uint256
-	PresentValue  types.Uint256
-	NewValue      types.Uint256
+	OriginalValue uint256.Int
+	PresentValue  uint256.Int
+	NewValue      uint256.Int
 }
 
-func (s *SStoreResult) IsOriginalZero() bool      { return types.IsZeroPtr(&s.OriginalValue) }
-func (s *SStoreResult) IsPresentZero() bool       { return types.IsZeroPtr(&s.PresentValue) }
-func (s *SStoreResult) IsNewZero() bool           { return types.IsZeroPtr(&s.NewValue) }
-func (s *SStoreResult) IsOriginalEqPresent() bool { return types.EqPtr(&s.OriginalValue, &s.PresentValue) }
-func (s *SStoreResult) IsOriginalEqNew() bool     { return types.EqPtr(&s.OriginalValue, &s.NewValue) }
-func (s *SStoreResult) IsNewEqPresent() bool      { return types.EqPtr(&s.NewValue, &s.PresentValue) }
-func (s *SStoreResult) NewValuesChangesPresent() bool { return !types.EqPtr(&s.NewValue, &s.PresentValue) }
+func (s *SStoreResult) IsOriginalZero() bool { return types.IsZeroPtr(&s.OriginalValue) }
+func (s *SStoreResult) IsPresentZero() bool  { return types.IsZeroPtr(&s.PresentValue) }
+func (s *SStoreResult) IsNewZero() bool      { return types.IsZeroPtr(&s.NewValue) }
+func (s *SStoreResult) IsOriginalEqPresent() bool {
+	return types.EqPtr(&s.OriginalValue, &s.PresentValue)
+}
+func (s *SStoreResult) IsOriginalEqNew() bool { return types.EqPtr(&s.OriginalValue, &s.NewValue) }
+func (s *SStoreResult) IsNewEqPresent() bool  { return types.EqPtr(&s.NewValue, &s.PresentValue) }
+func (s *SStoreResult) NewValuesChangesPresent() bool {
+	return !types.EqPtr(&s.NewValue, &s.PresentValue)
+}
 
 // SstoreDynamicGas calculates the dynamic SSTORE gas cost.
 func (g *GasParams) SstoreDynamicGas(isIstanbul bool, vals *SStoreResult, isCold bool) uint64 {
@@ -452,7 +457,7 @@ func (g *GasParams) InitialTxGas(
 // --- Internal helpers ---
 
 // log2floor returns floor(log2(value)). Returns 0 if value is zero.
-func log2floor(value types.Uint256) uint64 {
+func log2floor(value uint256.Int) uint64 {
 	var l uint64 = 256
 	for i := 3; i >= 0; i-- {
 		limb := value[i]

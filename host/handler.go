@@ -4,9 +4,9 @@ package host
 import (
 	"github.com/Giulio2002/gevm/opcode"
 	"github.com/Giulio2002/gevm/precompiles"
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/spec"
 	"github.com/Giulio2002/gevm/state"
+	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/vm"
 )
 
@@ -21,13 +21,13 @@ const CallStackLimit = 1024
 type Handler struct {
 	Host           *EvmHost
 	Precompiles    *precompiles.PrecompileSet
-	RootMemory     *vm.Memory                      // Root memory for the transaction, shared across frames via child contexts
-	ReturnAlloc    *vm.ReturnDataArena              // Arena for pooling RETURN/REVERT output buffers (owned by Evm)
-	JumpTableCache map[types.B256][]byte       // Cached JUMPDEST bitmaps keyed by code hash (persists across pooled Evm reuse)
-	RootInterp     *vm.Interpreter                  // Embedded root interpreter for depth-0 calls (nil = use pool)
-	RootBytecode   *vm.Bytecode                     // Embedded root bytecode for depth-0 calls (nil = use pool)
-	Runner         vm.Runner                        // Opcode loop runner (DefaultRunner or TracingRunner)
-	hooks          *vm.Hooks                        // Lifecycle hooks (OnEnter/OnExit/OnTxStart/OnTxEnd), extracted from Runner
+	RootMemory     *vm.Memory            // Root memory for the transaction, shared across frames via child contexts
+	ReturnAlloc    *vm.ReturnDataArena   // Arena for pooling RETURN/REVERT output buffers (owned by Evm)
+	JumpTableCache map[types.B256][]byte // Cached JUMPDEST bitmaps keyed by code hash (persists across pooled Evm reuse)
+	RootInterp     *vm.Interpreter       // Embedded root interpreter for depth-0 calls (nil = use pool)
+	RootBytecode   *vm.Bytecode          // Embedded root bytecode for depth-0 calls (nil = use pool)
+	Runner         vm.Runner             // Opcode loop runner (DefaultRunner or TracingRunner)
+	hooks          *vm.Hooks             // Lifecycle hooks (OnEnter/OnExit/OnTxStart/OnTxEnd), extracted from Runner
 }
 
 // NewHandler creates a new Handler.
@@ -300,7 +300,7 @@ func (h *Handler) executeCreate(inputs *vm.CreateInputs, depth int, parentMem *v
 	callerAcc := callerResult.Data
 
 	// Check caller balance
-	if callerAcc.Info.Balance.Lt(inputs.Value) {
+	if callerAcc.Info.Balance.Lt(&inputs.Value) {
 		return vm.NewCreateOutcome(
 			vm.NewInterpreterResult(vm.InstructionResultOutOfFunds, nil, vm.NewGas(inputs.GasLimit)),
 			nil,
@@ -330,7 +330,7 @@ func (h *Handler) executeCreate(inputs *vm.CreateInputs, depth int, parentMem *v
 		createdAddress = types.CreateAddress(inputs.Caller, oldNonce)
 	case vm.CreateSchemeCreate2:
 		codeHash := types.Keccak256(inputs.InitCode)
-		createdAddress = types.Create2Address(inputs.Caller, inputs.Scheme.Salt.ToBytes32(), codeHash)
+		createdAddress = types.Create2Address(inputs.Caller, inputs.Scheme.Salt.Bytes32(), codeHash)
 	}
 
 	// Warm-load the created address into the journal (required before CreateAccountCheckpoint)

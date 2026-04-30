@@ -2,8 +2,9 @@
 package vm
 
 import (
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/spec"
+	"github.com/Giulio2002/gevm/types"
+	"github.com/holiman/uint256"
 )
 
 // Maximum initcode size: 2 * MAX_CODE_SIZE (24576) = 49152
@@ -130,10 +131,10 @@ func getMemoryInputAndOutRanges(interp *Interpreter) (MemoryRange, MemoryRange, 
 	return inputRange, outputRange, true
 }
 
-// resizeMemoryRange converts Uint256 offset/len to a MemoryRange and resizes
+// resizeMemoryRange converts uint256.Int offset/len to a MemoryRange and resizes
 // memory if needed. Returns (range, ok). If len is 0, returns a zero range
 // without resizing.
-func resizeMemoryRange(interp *Interpreter, offsetVal, lenVal types.Uint256) (MemoryRange, bool) {
+func resizeMemoryRange(interp *Interpreter, offsetVal, lenVal uint256.Int) (MemoryRange, bool) {
 	length, ok := interp.asUsizeOrFail(lenVal)
 	if !ok {
 		return MemoryRange{}, false
@@ -275,7 +276,7 @@ func opCall(interp *Interpreter, host Host) {
 		interp.HaltUnderflow()
 		return
 	}
-	to := toVal.ToAddress()
+	to := types.U256ToAddress(&toVal)
 	transfersValue := !value.IsZero()
 	if interp.RuntimeFlag.IsStatic && transfersValue {
 		interp.Halt(InstructionResultCallNotAllowedInsideStatic)
@@ -285,7 +286,7 @@ func opCall(interp *Interpreter, host Host) {
 	if !ok {
 		return
 	}
-	gasLimitOnStack := stackGasLimit.AsUsizeSaturated()
+	gasLimitOnStack := types.U256AsUsizeSaturated(&stackGasLimit)
 	gasLimit, ok := loadAccountAndCalcGas(interp, host, to, transfersValue, true, gasLimitOnStack)
 	if !ok {
 		return
@@ -314,13 +315,13 @@ func opCallcode(interp *Interpreter, host Host) {
 		interp.HaltUnderflow()
 		return
 	}
-	to := toVal.ToAddress()
+	to := types.U256ToAddress(&toVal)
 	transfersValue := !value.IsZero()
 	inputRange, outputRange, ok := getMemoryInputAndOutRanges(interp)
 	if !ok {
 		return
 	}
-	gasLimitOnStack := stackGasLimit.AsUsizeSaturated()
+	gasLimitOnStack := types.U256AsUsizeSaturated(&stackGasLimit)
 	gasLimit, ok := loadAccountAndCalcGas(interp, host, to, transfersValue, false, gasLimitOnStack)
 	if !ok {
 		return
@@ -349,12 +350,12 @@ func opDelegatecall(interp *Interpreter, host Host) {
 		interp.HaltUnderflow()
 		return
 	}
-	to := toVal.ToAddress()
+	to := types.U256ToAddress(&toVal)
 	inputRange, outputRange, ok := getMemoryInputAndOutRanges(interp)
 	if !ok {
 		return
 	}
-	gasLimitOnStack := stackGasLimit.AsUsizeSaturated()
+	gasLimitOnStack := types.U256AsUsizeSaturated(&stackGasLimit)
 	gasLimit, ok := loadAccountAndCalcGas(interp, host, to, false, false, gasLimitOnStack)
 	if !ok {
 		return
@@ -383,12 +384,12 @@ func opStaticcall(interp *Interpreter, host Host) {
 		interp.HaltUnderflow()
 		return
 	}
-	to := toVal.ToAddress()
+	to := types.U256ToAddress(&toVal)
 	inputRange, outputRange, ok := getMemoryInputAndOutRanges(interp)
 	if !ok {
 		return
 	}
-	gasLimitOnStack := stackGasLimit.AsUsizeSaturated()
+	gasLimitOnStack := types.U256AsUsizeSaturated(&stackGasLimit)
 	gasLimit, ok := loadAccountAndCalcGas(interp, host, to, false, false, gasLimitOnStack)
 	if !ok {
 		return

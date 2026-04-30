@@ -4,9 +4,9 @@ import (
 	"testing"
 
 	"github.com/Giulio2002/gevm/opcode"
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/spec"
 	"github.com/Giulio2002/gevm/state"
+	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/vm"
 )
 
@@ -497,7 +497,7 @@ func TestCreate2Address(t *testing.T) {
 
 	// Verify address matches CREATE2 formula
 	codeHash := types.Keccak256(initCode)
-	expectedAddr := types.Create2Address(addr(0x01), salt.ToBytes32(), codeHash)
+	expectedAddr := types.Create2Address(addr(0x01), salt.Bytes32(), codeHash)
 	if *result.Create.Address != expectedAddr {
 		t.Fatalf("wrong CREATE2 address: got %s, want %s",
 			result.Create.Address.Hex(), expectedAddr.Hex())

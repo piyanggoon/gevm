@@ -4,6 +4,7 @@ package spec
 
 import (
 	"fmt"
+	"github.com/holiman/uint256"
 
 	"github.com/Giulio2002/gevm/types"
 )
@@ -50,18 +51,18 @@ func (r *RlpItem) AsUint64() (uint64, error) {
 	return v, nil
 }
 
-// AsU256 parses the RLP string as a big-endian Uint256.
+// AsU256 parses the RLP string as a big-endian uint256.Int.
 // Rejects leading zeros. Zero must be encoded as empty bytes (0x80).
-func (r *RlpItem) AsU256() (types.Uint256, error) {
+func (r *RlpItem) AsU256() (uint256.Int, error) {
 	b := r.Data
 	if len(b) == 0 {
 		return types.U256Zero, nil
 	}
 	if b[0] == 0 {
-		return types.U256Zero, fmt.Errorf("RLP Uint256: leading zeros")
+		return types.U256Zero, fmt.Errorf("RLP uint256.Int: leading zeros")
 	}
 	if len(b) > 32 {
-		return types.U256Zero, fmt.Errorf("RLP Uint256: overflow (%d bytes)", len(b))
+		return types.U256Zero, fmt.Errorf("RLP uint256.Int: overflow (%d bytes)", len(b))
 	}
 	return types.U256FromBytes(b), nil
 }

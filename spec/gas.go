@@ -10,10 +10,10 @@ const (
 	GasHigh     uint64 = 10
 	GasJumpdest uint64 = 1
 
-	GasDataLoadN      uint64 = 3
-	GasConditionJump  uint64 = 4
-	GasRetf           uint64 = 3
-	GasDataLoad       uint64 = 4
+	GasDataLoadN     uint64 = 3
+	GasConditionJump uint64 = 4
+	GasRetf          uint64 = 3
+	GasDataLoad      uint64 = 4
 
 	GasSelfdestructRefund int64  = 24000
 	GasCreate             uint64 = 32000
@@ -31,29 +31,29 @@ const (
 	GasCodedeposit        uint64 = 200
 
 	// EIP-1884
-	GasIstanbulSloadGas uint64 = 800
-	GasSstoreSet        uint64 = 20000
-	GasSstoreReset      uint64 = 5000
-	GasRefundSstoreClears int64 = 15000
+	GasIstanbulSloadGas   uint64 = 800
+	GasSstoreSet          uint64 = 20000
+	GasSstoreReset        uint64 = 5000
+	GasRefundSstoreClears int64  = 15000
 
 	// Calldata costs
-	GasStandardTokenCost              uint64 = 4
-	GasNonZeroByteDataCost            uint64 = 68
-	GasNonZeroByteMultiplier          uint64 = 68 / 4 // 17
-	GasNonZeroByteDataCostIstanbul    uint64 = 16
-	GasNonZeroByteMultiplierIstanbul  uint64 = 16 / 4 // 4
-	GasTotalCostFloorPerToken         uint64 = 10
+	GasStandardTokenCost             uint64 = 4
+	GasNonZeroByteDataCost           uint64 = 68
+	GasNonZeroByteMultiplier         uint64 = 68 / 4 // 17
+	GasNonZeroByteDataCostIstanbul   uint64 = 16
+	GasNonZeroByteMultiplierIstanbul uint64 = 16 / 4 // 4
+	GasTotalCostFloorPerToken        uint64 = 10
 
 	GasEofCreate uint64 = 32000
 
 	// Berlin EIP-2929/EIP-2930
-	GasAccessListAddress          uint64 = 2400
-	GasAccessListStorageKey       uint64 = 1900
-	GasColdSloadCost              uint64 = 2100
-	GasColdAccountAccessCost      uint64 = 2600
+	GasAccessListAddress           uint64 = 2400
+	GasAccessListStorageKey        uint64 = 1900
+	GasColdSloadCost               uint64 = 2100
+	GasColdAccountAccessCost       uint64 = 2600
 	GasColdAccountAccessAdditional uint64 = 2600 - 100 // 2500
-	GasWarmStorageReadCost        uint64 = 100
-	GasWarmSstoreReset            uint64 = 5000 - 2100 // 2900
+	GasWarmStorageReadCost         uint64 = 100
+	GasWarmSstoreReset             uint64 = 5000 - 2100 // 2900
 
 	// EIP-3860
 	GasInitcodeWordCost uint64 = 2

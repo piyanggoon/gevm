@@ -4,8 +4,9 @@ package vm
 
 import (
 	"github.com/Giulio2002/gevm/opcode"
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/spec"
+	"github.com/Giulio2002/gevm/types"
+	"github.com/holiman/uint256"
 )
 
 // Ensure imports are used.
@@ -73,7 +74,7 @@ func (DefaultRunner) Run(interp *Interpreter, host Host) {
 
 				a := s.data[s.top]
 				top := &s.data[s.top-1]
-				*top = a.Mul(*top)
+				top.Mul(&a, top)
 
 			}
 		case opcode.SUB:
@@ -110,7 +111,7 @@ func (DefaultRunner) Run(interp *Interpreter, host Host) {
 				a := s.data[s.top]
 				top := &s.data[s.top-1]
 				if !types.IsZeroPtr(top) {
-					*top = a.Div(*top)
+					top.Div(&a, top)
 				}
 
 			}
@@ -150,7 +151,7 @@ func (DefaultRunner) Run(interp *Interpreter, host Host) {
 				a := s.data[s.top]
 				top := &s.data[s.top-1]
 				if !types.IsZeroPtr(top) {
-					*top = a.Mod(*top)
+					top.Mod(&a, top)
 				}
 
 			}
@@ -190,7 +191,7 @@ func (DefaultRunner) Run(interp *Interpreter, host Host) {
 				a := s.data[s.top+1]
 				b := s.data[s.top]
 				top := &s.data[s.top-1]
-				*top = a.AddMod(b, *top)
+				top.AddMod(&a, &b, top)
 
 			}
 		case opcode.MULMOD:
@@ -210,7 +211,7 @@ func (DefaultRunner) Run(interp *Interpreter, host Host) {
 				a := s.data[s.top+1]
 				b := s.data[s.top]
 				top := &s.data[s.top-1]
-				*top = a.MulMod(b, *top)
+				top.MulMod(&a, &b, top)
 
 			}
 		case opcode.EXP:
@@ -469,9 +470,9 @@ func (DefaultRunner) Run(interp *Interpreter, host Host) {
 
 				a := s.data[s.top]
 				top := &s.data[s.top-1]
-				idx := a.AsUsizeSaturated()
+				idx := types.U256AsUsizeSaturated(&a)
 				if idx < 32 {
-					*top = types.U256From(uint64(top.ByteBE(uint(idx))))
+					*top = types.U256From(uint64(types.U256ByteBE(top, uint(idx))))
 				} else {
 					*top = types.U256Zero
 				}
@@ -502,9 +503,9 @@ func (DefaultRunner) Run(interp *Interpreter, host Host) {
 
 					shift := s.data[s.top]
 					top := &s.data[s.top-1]
-					sa := shift.AsUsizeSaturated()
+					sa := types.U256AsUsizeSaturated(&shift)
 					if sa < 256 {
-						*top = top.Shl(uint(sa))
+						top.Lsh(top, uint(sa))
 					} else {
 						*top = types.U256Zero
 					}
@@ -536,9 +537,9 @@ func (DefaultRunner) Run(interp *Interpreter, host Host) {
 
 					shift := s.data[s.top]
 					top := &s.data[s.top-1]
-					sa := shift.AsUsizeSaturated()
+					sa := types.U256AsUsizeSaturated(&shift)
 					if sa < 256 {
-						*top = top.Shr(uint(sa))
+						top.Rsh(top, uint(sa))
 					} else {
 						*top = types.U256Zero
 					}
@@ -570,10 +571,10 @@ func (DefaultRunner) Run(interp *Interpreter, host Host) {
 
 					shift := s.data[s.top]
 					top := &s.data[s.top-1]
-					sa := shift.AsUsizeSaturated()
+					sa := types.U256AsUsizeSaturated(&shift)
 					if sa < 256 {
-						*top = top.Sar(uint(sa))
-					} else if top.Bit(255) {
+						top.SRsh(top, uint(sa))
+					} else if types.U256Bit(top, 255) {
 						*top = types.U256Max
 					} else {
 						*top = types.U256Zero
@@ -604,7 +605,7 @@ func (DefaultRunner) Run(interp *Interpreter, host Host) {
 				} else {
 
 					top := &s.data[s.top-1]
-					*top = types.U256From(uint64(top.LeadingZeros()))
+					*top = types.U256From(uint64(types.U256LeadingZeros(top)))
 
 				}
 			}
@@ -709,7 +710,7 @@ func (DefaultRunner) Run(interp *Interpreter, host Host) {
 			} else {
 
 				top := &s.data[s.top-1]
-				offset := top.AsUsizeSaturated()
+				offset := types.U256AsUsizeSaturated(top)
 				input := interp.Input.Input
 				var word [32]byte
 				if offset < uint64(len(input)) {
@@ -1532,7 +1533,7 @@ func (DefaultRunner) Run(interp *Interpreter, host Host) {
 				interp.HaltOverflow()
 			} else {
 
-				s.data[s.top] = types.Uint256{uint64(bc.code[bc.pc]), 0, 0, 0}
+				s.data[s.top] = uint256.Int{uint64(bc.code[bc.pc]), 0, 0, 0}
 				bc.pc++
 				s.top++
 
@@ -1552,7 +1553,7 @@ func (DefaultRunner) Run(interp *Interpreter, host Host) {
 
 				v := uint64(bc.code[bc.pc])<<8 | uint64(bc.code[bc.pc+1])
 				bc.pc += 2
-				s.data[s.top] = types.Uint256{v, 0, 0, 0}
+				s.data[s.top] = uint256.Int{v, 0, 0, 0}
 				s.top++
 
 			}
@@ -1573,7 +1574,7 @@ func (DefaultRunner) Run(interp *Interpreter, host Host) {
 				p := bc.pc
 				v := uint64(c[p])<<16 | uint64(c[p+1])<<8 | uint64(c[p+2])
 				bc.pc = p + 3
-				s.data[s.top] = types.Uint256{v, 0, 0, 0}
+				s.data[s.top] = uint256.Int{v, 0, 0, 0}
 				s.top++
 
 			}
@@ -1594,7 +1595,7 @@ func (DefaultRunner) Run(interp *Interpreter, host Host) {
 				p := bc.pc
 				v := uint64(c[p])<<24 | uint64(c[p+1])<<16 | uint64(c[p+2])<<8 | uint64(c[p+3])
 				bc.pc = p + 4
-				s.data[s.top] = types.Uint256{v, 0, 0, 0}
+				s.data[s.top] = uint256.Int{v, 0, 0, 0}
 				s.top++
 
 			}
@@ -1620,7 +1621,7 @@ func (DefaultRunner) Run(interp *Interpreter, host Host) {
 				l0 := uint64(c[p+12])<<56 | uint64(c[p+13])<<48 | uint64(c[p+14])<<40 | uint64(c[p+15])<<32 |
 					uint64(c[p+16])<<24 | uint64(c[p+17])<<16 | uint64(c[p+18])<<8 | uint64(c[p+19])
 				bc.pc = p + 20
-				s.data[s.top] = types.Uint256{l0, l1, l2, 0}
+				s.data[s.top] = uint256.Int{l0, l1, l2, 0}
 				s.top++
 
 			}
@@ -1648,7 +1649,7 @@ func (DefaultRunner) Run(interp *Interpreter, host Host) {
 				l0 := uint64(c[p+24])<<56 | uint64(c[p+25])<<48 | uint64(c[p+26])<<40 | uint64(c[p+27])<<32 |
 					uint64(c[p+28])<<24 | uint64(c[p+29])<<16 | uint64(c[p+30])<<8 | uint64(c[p+31])
 				bc.pc = p + 32
-				s.data[s.top] = types.Uint256{l0, l1, l2, l3}
+				s.data[s.top] = uint256.Int{l0, l1, l2, l3}
 				s.top++
 
 			}
@@ -2262,7 +2263,7 @@ func (r *TracingRunner) Run(interp *Interpreter, host Host) {
 
 				a := s.data[s.top]
 				top := &s.data[s.top-1]
-				*top = a.Mul(*top)
+				top.Mul(&a, top)
 
 			}
 		case opcode.SUB:
@@ -2295,7 +2296,7 @@ func (r *TracingRunner) Run(interp *Interpreter, host Host) {
 				a := s.data[s.top]
 				top := &s.data[s.top-1]
 				if !types.IsZeroPtr(top) {
-					*top = a.Div(*top)
+					top.Div(&a, top)
 				}
 
 			}
@@ -2331,7 +2332,7 @@ func (r *TracingRunner) Run(interp *Interpreter, host Host) {
 				a := s.data[s.top]
 				top := &s.data[s.top-1]
 				if !types.IsZeroPtr(top) {
-					*top = a.Mod(*top)
+					top.Mod(&a, top)
 				}
 
 			}
@@ -2367,7 +2368,7 @@ func (r *TracingRunner) Run(interp *Interpreter, host Host) {
 				a := s.data[s.top+1]
 				b := s.data[s.top]
 				top := &s.data[s.top-1]
-				*top = a.AddMod(b, *top)
+				top.AddMod(&a, &b, top)
 
 			}
 		case opcode.MULMOD:
@@ -2385,7 +2386,7 @@ func (r *TracingRunner) Run(interp *Interpreter, host Host) {
 				a := s.data[s.top+1]
 				b := s.data[s.top]
 				top := &s.data[s.top-1]
-				*top = a.MulMod(b, *top)
+				top.MulMod(&a, &b, top)
 
 			}
 		case opcode.EXP:
@@ -2618,9 +2619,9 @@ func (r *TracingRunner) Run(interp *Interpreter, host Host) {
 
 				a := s.data[s.top]
 				top := &s.data[s.top-1]
-				idx := a.AsUsizeSaturated()
+				idx := types.U256AsUsizeSaturated(&a)
 				if idx < 32 {
-					*top = types.U256From(uint64(top.ByteBE(uint(idx))))
+					*top = types.U256From(uint64(types.U256ByteBE(top, uint(idx))))
 				} else {
 					*top = types.U256Zero
 				}
@@ -2643,9 +2644,9 @@ func (r *TracingRunner) Run(interp *Interpreter, host Host) {
 
 					shift := s.data[s.top]
 					top := &s.data[s.top-1]
-					sa := shift.AsUsizeSaturated()
+					sa := types.U256AsUsizeSaturated(&shift)
 					if sa < 256 {
-						*top = top.Shl(uint(sa))
+						top.Lsh(top, uint(sa))
 					} else {
 						*top = types.U256Zero
 					}
@@ -2669,9 +2670,9 @@ func (r *TracingRunner) Run(interp *Interpreter, host Host) {
 
 					shift := s.data[s.top]
 					top := &s.data[s.top-1]
-					sa := shift.AsUsizeSaturated()
+					sa := types.U256AsUsizeSaturated(&shift)
 					if sa < 256 {
-						*top = top.Shr(uint(sa))
+						top.Rsh(top, uint(sa))
 					} else {
 						*top = types.U256Zero
 					}
@@ -2695,10 +2696,10 @@ func (r *TracingRunner) Run(interp *Interpreter, host Host) {
 
 					shift := s.data[s.top]
 					top := &s.data[s.top-1]
-					sa := shift.AsUsizeSaturated()
+					sa := types.U256AsUsizeSaturated(&shift)
 					if sa < 256 {
-						*top = top.Sar(uint(sa))
-					} else if top.Bit(255) {
+						top.SRsh(top, uint(sa))
+					} else if types.U256Bit(top, 255) {
 						*top = types.U256Max
 					} else {
 						*top = types.U256Zero
@@ -2721,7 +2722,7 @@ func (r *TracingRunner) Run(interp *Interpreter, host Host) {
 				} else {
 
 					top := &s.data[s.top-1]
-					*top = types.U256From(uint64(top.LeadingZeros()))
+					*top = types.U256From(uint64(types.U256LeadingZeros(top)))
 
 				}
 			}
@@ -2812,7 +2813,7 @@ func (r *TracingRunner) Run(interp *Interpreter, host Host) {
 			} else {
 
 				top := &s.data[s.top-1]
-				offset := top.AsUsizeSaturated()
+				offset := types.U256AsUsizeSaturated(top)
 				input := interp.Input.Input
 				var word [32]byte
 				if offset < uint64(len(input)) {
@@ -3465,7 +3466,7 @@ func (r *TracingRunner) Run(interp *Interpreter, host Host) {
 				interp.HaltOverflow()
 			} else {
 
-				s.data[s.top] = types.Uint256{uint64(bc.code[bc.pc]), 0, 0, 0}
+				s.data[s.top] = uint256.Int{uint64(bc.code[bc.pc]), 0, 0, 0}
 				bc.pc++
 				s.top++
 
@@ -3483,7 +3484,7 @@ func (r *TracingRunner) Run(interp *Interpreter, host Host) {
 
 				v := uint64(bc.code[bc.pc])<<8 | uint64(bc.code[bc.pc+1])
 				bc.pc += 2
-				s.data[s.top] = types.Uint256{v, 0, 0, 0}
+				s.data[s.top] = uint256.Int{v, 0, 0, 0}
 				s.top++
 
 			}
@@ -3502,7 +3503,7 @@ func (r *TracingRunner) Run(interp *Interpreter, host Host) {
 				p := bc.pc
 				v := uint64(c[p])<<16 | uint64(c[p+1])<<8 | uint64(c[p+2])
 				bc.pc = p + 3
-				s.data[s.top] = types.Uint256{v, 0, 0, 0}
+				s.data[s.top] = uint256.Int{v, 0, 0, 0}
 				s.top++
 
 			}
@@ -3521,7 +3522,7 @@ func (r *TracingRunner) Run(interp *Interpreter, host Host) {
 				p := bc.pc
 				v := uint64(c[p])<<24 | uint64(c[p+1])<<16 | uint64(c[p+2])<<8 | uint64(c[p+3])
 				bc.pc = p + 4
-				s.data[s.top] = types.Uint256{v, 0, 0, 0}
+				s.data[s.top] = uint256.Int{v, 0, 0, 0}
 				s.top++
 
 			}
@@ -3545,7 +3546,7 @@ func (r *TracingRunner) Run(interp *Interpreter, host Host) {
 				l0 := uint64(c[p+12])<<56 | uint64(c[p+13])<<48 | uint64(c[p+14])<<40 | uint64(c[p+15])<<32 |
 					uint64(c[p+16])<<24 | uint64(c[p+17])<<16 | uint64(c[p+18])<<8 | uint64(c[p+19])
 				bc.pc = p + 20
-				s.data[s.top] = types.Uint256{l0, l1, l2, 0}
+				s.data[s.top] = uint256.Int{l0, l1, l2, 0}
 				s.top++
 
 			}
@@ -3571,7 +3572,7 @@ func (r *TracingRunner) Run(interp *Interpreter, host Host) {
 				l0 := uint64(c[p+24])<<56 | uint64(c[p+25])<<48 | uint64(c[p+26])<<40 | uint64(c[p+27])<<32 |
 					uint64(c[p+28])<<24 | uint64(c[p+29])<<16 | uint64(c[p+30])<<8 | uint64(c[p+31])
 				bc.pc = p + 32
-				s.data[s.top] = types.Uint256{l0, l1, l2, l3}
+				s.data[s.top] = uint256.Int{l0, l1, l2, l3}
 				s.top++
 
 			}

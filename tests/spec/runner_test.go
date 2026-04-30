@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// TestHexU256Unmarshal verifies hex JSON parsing for Uint256.
+// TestHexU256Unmarshal verifies hex JSON parsing for uint256.Int.
 func TestHexU256Unmarshal(t *testing.T) {
 	tests := []struct {
 		input string

@@ -7,15 +7,16 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"github.com/holiman/uint256"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/Giulio2002/gevm/host"
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/spec"
 	"github.com/Giulio2002/gevm/state"
 	spectest "github.com/Giulio2002/gevm/tests/spec"
+	"github.com/Giulio2002/gevm/types"
 )
 
 func fatal(msg string, args ...any) {
@@ -57,7 +58,7 @@ func main() {
 
 	forkID := spec.Cancun
 	hugeBalance := types.U256FromLimbs(0, 0, 1, 0) // ~2^128
-	gasLimit := uint64(1) << 63                          // large, won't overflow
+	gasLimit := uint64(1) << 63                    // large, won't overflow
 
 	prevrandao := types.U256Zero
 	block := host.BlockEnv{
@@ -99,9 +100,9 @@ func main() {
 	callDB := spectest.NewMemDB()
 	var callerNonce uint64
 	for addr, acc := range evm.Journal.State {
-		var storage map[types.Uint256]types.Uint256
+		var storage map[uint256.Int]uint256.Int
 		if acc.Storage != nil && len(acc.Storage) > 0 {
-			storage = make(map[types.Uint256]types.Uint256, len(acc.Storage))
+			storage = make(map[uint256.Int]uint256.Int, len(acc.Storage))
 			for key, slot := range acc.Storage {
 				storage[key] = slot.PresentValue
 			}

@@ -3,6 +3,7 @@ package vm
 
 import (
 	"github.com/Giulio2002/gevm/types"
+	"github.com/holiman/uint256"
 )
 
 // CallScheme represents the type of call instruction.
@@ -26,16 +27,16 @@ const (
 // CallValue represents the value associated with a call.
 type CallValue struct {
 	Kind  CallValueKind
-	Value types.Uint256
+	Value uint256.Int
 }
 
 // NewCallValueTransfer creates a Transfer call value.
-func NewCallValueTransfer(value types.Uint256) CallValue {
+func NewCallValueTransfer(value uint256.Int) CallValue {
 	return CallValue{Kind: CallValueTransfer, Value: value}
 }
 
 // NewCallValueApparent creates an Apparent call value (DELEGATECALL).
-func NewCallValueApparent(value types.Uint256) CallValue {
+func NewCallValueApparent(value uint256.Int) CallValue {
 	return CallValue{Kind: CallValueApparent, Value: value}
 }
 
@@ -46,7 +47,7 @@ func (cv CallValue) IsTransfer() bool { return cv.Kind == CallValueTransfer }
 func (cv CallValue) IsApparent() bool { return cv.Kind == CallValueApparent }
 
 // TransferValue returns the transfer amount, or nil if apparent.
-func (cv CallValue) TransferValue() *types.Uint256 {
+func (cv CallValue) TransferValue() *uint256.Int {
 	if cv.Kind == CallValueTransfer {
 		v := cv.Value
 		return &v
@@ -70,7 +71,7 @@ const (
 // CreateScheme represents the creation scheme with optional salt.
 type CreateScheme struct {
 	Kind CreateSchemeKind
-	Salt types.Uint256 // Only meaningful for Create2
+	Salt uint256.Int // Only meaningful for Create2
 }
 
 // NewCreateSchemeCreate creates a CREATE scheme.
@@ -79,7 +80,7 @@ func NewCreateSchemeCreate() CreateScheme {
 }
 
 // NewCreateSchemeCreate2 creates a CREATE2 scheme with salt.
-func NewCreateSchemeCreate2(salt types.Uint256) CreateScheme {
+func NewCreateSchemeCreate2(salt uint256.Int) CreateScheme {
 	return CreateScheme{Kind: CreateSchemeCreate2, Salt: salt}
 }
 
@@ -118,7 +119,7 @@ type CreateInputs struct {
 	// Create scheme (Create or Create2 with salt).
 	Scheme CreateScheme
 	// Value to transfer to the new contract.
-	Value types.Uint256
+	Value uint256.Int
 	// Init code of the contract.
 	InitCode types.Bytes
 	// Gas limit of the create call.

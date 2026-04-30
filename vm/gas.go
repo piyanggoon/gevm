@@ -63,7 +63,7 @@ func mulUint64(a, b uint64) (uint64, uint64) {
 	w1 := t & mask32
 	w2 := t >> 32
 	w1 += a0 * b1
-	return a1*b1 + w2 + w1>>32, a*b
+	return a1*b1 + w2 + w1>>32, a * b
 }
 
 // Gas represents the state of gas during EVM execution.

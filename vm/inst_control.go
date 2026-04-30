@@ -168,7 +168,7 @@ func opSelfdestruct(interp *Interpreter, host Host) {
 		return
 	}
 	s.top--
-	target := s.data[s.top].ToAddress()
+	target := types.U256ToAddress(&s.data[s.top])
 	addr := interp.Input.TargetAddress
 	result := host.SelfDestruct(addr, target)
 	cost := interp.GasParams.SelfdestructCost(result.HadValue && !result.TargetExists, result.IsCold)

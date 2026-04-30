@@ -3,8 +3,9 @@
 package spec
 
 import (
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/state"
+	"github.com/Giulio2002/gevm/types"
+	"github.com/holiman/uint256"
 )
 
 // LogsRoot computes the keccak256 hash of RLP-encoded logs.
@@ -123,13 +124,13 @@ func RlpEncodeUint64(v uint64) []byte {
 	return []byte{0x80}
 }
 
-// RlpEncodeU256 encodes a Uint256 as an RLP byte string (big-endian, no leading zeros).
+// RlpEncodeU256 encodes a uint256.Int as an RLP byte string (big-endian, no leading zeros).
 // Zero is encoded as empty byte string (0x80).
-func RlpEncodeU256(v types.Uint256) []byte {
+func RlpEncodeU256(v uint256.Int) []byte {
 	if v.IsZero() {
 		return []byte{0x80}
 	}
-	b32 := v.ToBytes32()
+	b32 := v.Bytes32()
 	// Skip leading zeros
 	for i := 0; i < 32; i++ {
 		if b32[i] != 0 {

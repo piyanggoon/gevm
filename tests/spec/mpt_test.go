@@ -2,6 +2,7 @@ package spec
 
 import (
 	"encoding/hex"
+	"github.com/holiman/uint256"
 	"testing"
 
 	"github.com/Giulio2002/gevm/types"
@@ -122,7 +123,7 @@ func TestStorageRootEmpty(t *testing.T) {
 }
 
 func TestStorageRootSingleSlot(t *testing.T) {
-	storage := map[types.Uint256]types.Uint256{
+	storage := map[uint256.Int]uint256.Int{
 		types.U256From(0): types.U256From(1),
 	}
 	root := storageRoot(storage)

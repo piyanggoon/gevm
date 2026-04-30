@@ -10,21 +10,21 @@ const MaxInitcodeSize = 2 * MaxCodeSize // 49152 bytes
 
 // EIP-4844: Shard Blob Transactions (Cancun)
 const (
-	VersionedHashVersionKZG = 0x01
-	GasPerBlob              = 1 << 17 // 131072
-	MinBlobGasPrice  uint64 = 1
+	VersionedHashVersionKZG        = 0x01
+	GasPerBlob                     = 1 << 17 // 131072
+	MinBlobGasPrice         uint64 = 1
 
-	TargetBlobNumberPerBlockCancun     = 3
-	MaxBlobNumberPerBlockCancun        = 6
-	MaxBlobGasPerBlockCancun           = MaxBlobNumberPerBlockCancun * GasPerBlob
-	TargetBlobGasPerBlockCancun        = TargetBlobNumberPerBlockCancun * GasPerBlob
-	BlobBaseFeeUpdateFractionCancun    = 3_338_477
+	TargetBlobNumberPerBlockCancun  = 3
+	MaxBlobNumberPerBlockCancun     = 6
+	MaxBlobGasPerBlockCancun        = MaxBlobNumberPerBlockCancun * GasPerBlob
+	TargetBlobGasPerBlockCancun     = TargetBlobNumberPerBlockCancun * GasPerBlob
+	BlobBaseFeeUpdateFractionCancun = 3_338_477
 
-	TargetBlobNumberPerBlockPrague     = 6
-	MaxBlobNumberPerBlockPrague        = 9
-	MaxBlobGasPerBlockPrague           = MaxBlobNumberPerBlockPrague * GasPerBlob
-	TargetBlobGasPerBlockPrague        = TargetBlobNumberPerBlockPrague * GasPerBlob
-	BlobBaseFeeUpdateFractionPrague    = 5_007_716
+	TargetBlobNumberPerBlockPrague  = 6
+	MaxBlobNumberPerBlockPrague     = 9
+	MaxBlobGasPerBlockPrague        = MaxBlobNumberPerBlockPrague * GasPerBlob
+	TargetBlobGasPerBlockPrague     = TargetBlobNumberPerBlockPrague * GasPerBlob
+	BlobBaseFeeUpdateFractionPrague = 5_007_716
 )
 
 // CalcBlobGasPrice calculates the blob gas price from excess blob gas.
@@ -178,8 +178,8 @@ func u128clz(a u128) int {
 
 // EIP-7702: Set EOA account code (Prague)
 const (
-	EIP7702PerAuthBaseCost       uint64 = 12500
-	EIP7702PerEmptyAccountCost   uint64 = 25000
+	EIP7702PerAuthBaseCost     uint64 = 12500
+	EIP7702PerEmptyAccountCost uint64 = 25000
 )
 
 // EIP-7823: Set upper bounds for MODEXP (Prague)

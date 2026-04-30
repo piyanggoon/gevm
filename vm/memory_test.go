@@ -3,8 +3,8 @@ package vm
 import (
 	"testing"
 
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/spec"
+	"github.com/Giulio2002/gevm/types"
 )
 
 func TestMemoryNew(t *testing.T) {
@@ -53,11 +53,11 @@ func TestMemorySetGet(t *testing.T) {
 		t.Error("get_word mismatch")
 	}
 
-	// Set/get Uint256
+	// Set/get uint256.Int
 	val := types.U256From(0xDEADBEEF)
 	m.SetU256(32, val)
 	gotU256 := m.GetU256(32)
-	if !gotU256.Eq(val) {
+	if !gotU256.Eq(&val) {
 		t.Errorf("get_u256: got %s, want %s", gotU256.Hex(), val.Hex())
 	}
 }

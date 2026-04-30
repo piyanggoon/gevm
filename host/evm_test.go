@@ -1,12 +1,13 @@
 package host
 
 import (
+	"github.com/holiman/uint256"
 	"testing"
 
 	"github.com/Giulio2002/gevm/opcode"
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/spec"
 	"github.com/Giulio2002/gevm/state"
+	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/vm"
 )
 
@@ -14,7 +15,7 @@ import (
 
 func makeEvm(db state.Database, forkID spec.ForkID, block BlockEnv) *Evm {
 	// Set a default block gas limit if not specified
-	if block.GasLimit == (types.Uint256{}) {
+	if block.GasLimit == (uint256.Int{}) {
 		block.GasLimit = types.U256From(30_000_000) // 30M default
 	}
 	return NewEvm(db, forkID, block, CfgEnv{ChainId: u(1)})

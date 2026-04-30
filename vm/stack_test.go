@@ -20,7 +20,7 @@ func TestStackPushPop(t *testing.T) {
 	if !ok {
 		t.Fatal("pop should succeed")
 	}
-	if !val.Eq(types.U256From(42)) {
+	if !val.Eq(up(types.U256From(42))) {
 		t.Errorf("pop: got %s, want 42", val.Hex())
 	}
 	if s.Len() != 0 {
@@ -58,15 +58,15 @@ func TestStackPeek(t *testing.T) {
 	s.Push(types.U256From(30))
 
 	val, ok := s.Peek(0) // top
-	if !ok || !val.Eq(types.U256From(30)) {
+	if !ok || !val.Eq(up(types.U256From(30))) {
 		t.Errorf("peek(0): got %s, want 30", val.Hex())
 	}
 	val, ok = s.Peek(1)
-	if !ok || !val.Eq(types.U256From(20)) {
+	if !ok || !val.Eq(up(types.U256From(20))) {
 		t.Errorf("peek(1): got %s, want 20", val.Hex())
 	}
 	val, ok = s.Peek(2)
-	if !ok || !val.Eq(types.U256From(10)) {
+	if !ok || !val.Eq(up(types.U256From(10))) {
 		t.Errorf("peek(2): got %s, want 10", val.Hex())
 	}
 	_, ok = s.Peek(3)
@@ -89,7 +89,7 @@ func TestStackDup(t *testing.T) {
 		t.Errorf("len after dup: got %d, want 4", s.Len())
 	}
 	val, _ := s.Peek(0)
-	if !val.Eq(types.U256From(30)) {
+	if !val.Eq(up(types.U256From(30))) {
 		t.Errorf("dup(1) top: got %s, want 30", val.Hex())
 	}
 
@@ -102,7 +102,7 @@ func TestStackDup(t *testing.T) {
 		t.Error("dup(3) should succeed")
 	}
 	val, _ = s2.Peek(0)
-	if !val.Eq(types.U256From(1)) {
+	if !val.Eq(up(types.U256From(1))) {
 		t.Errorf("dup(3) top: got %s, want 1", val.Hex())
 	}
 }
@@ -127,10 +127,10 @@ func TestStackSwap(t *testing.T) {
 	}
 	top, _ := s.Peek(0)
 	second, _ := s.Peek(1)
-	if !top.Eq(types.U256From(20)) {
+	if !top.Eq(up(types.U256From(20))) {
 		t.Errorf("after swap(1) top: got %s, want 20", top.Hex())
 	}
-	if !second.Eq(types.U256From(30)) {
+	if !second.Eq(up(types.U256From(30))) {
 		t.Errorf("after swap(1) second: got %s, want 30", second.Hex())
 	}
 
@@ -140,10 +140,10 @@ func TestStackSwap(t *testing.T) {
 	}
 	top, _ = s.Peek(0)
 	third, _ := s.Peek(2)
-	if !top.Eq(types.U256From(10)) {
+	if !top.Eq(up(types.U256From(10))) {
 		t.Errorf("after swap(2) top: got %s, want 10", top.Hex())
 	}
-	if !third.Eq(types.U256From(20)) {
+	if !third.Eq(up(types.U256From(20))) {
 		t.Errorf("after swap(2) third: got %s, want 20", third.Hex())
 	}
 }
@@ -170,10 +170,10 @@ func TestStackExchange(t *testing.T) {
 	}
 	v1, _ := s.Peek(1)
 	v3, _ := s.Peek(3)
-	if !v1.Eq(types.U256From(2)) {
+	if !v1.Eq(up(types.U256From(2))) {
 		t.Errorf("after exchange(1,2) pos 1: got %s, want 2", v1.Hex())
 	}
-	if !v3.Eq(types.U256From(4)) {
+	if !v3.Eq(up(types.U256From(4))) {
 		t.Errorf("after exchange(1,2) pos 3: got %s, want 4", v3.Hex())
 	}
 }
@@ -187,10 +187,10 @@ func TestStackPop2(t *testing.T) {
 	if !ok {
 		t.Fatal("pop2 should succeed")
 	}
-	if !a.Eq(types.U256From(20)) {
+	if !a.Eq(up(types.U256From(20))) {
 		t.Errorf("pop2 a: got %s, want 20", a.Hex())
 	}
-	if !b.Eq(types.U256From(10)) {
+	if !b.Eq(up(types.U256From(10))) {
 		t.Errorf("pop2 b: got %s, want 10", b.Hex())
 	}
 }
@@ -205,7 +205,7 @@ func TestStackPop3(t *testing.T) {
 	if !ok {
 		t.Fatal("pop3 should succeed")
 	}
-	if !a.Eq(types.U256From(30)) || !b.Eq(types.U256From(20)) || !c.Eq(types.U256From(10)) {
+	if !a.Eq(up(types.U256From(30))) || !b.Eq(up(types.U256From(20))) || !c.Eq(up(types.U256From(10))) {
 		t.Errorf("pop3: got %s %s %s", a.Hex(), b.Hex(), c.Hex())
 	}
 }
@@ -219,17 +219,17 @@ func TestStackPop1Top(t *testing.T) {
 	if !ok {
 		t.Fatal("pop1top should succeed")
 	}
-	if !a.Eq(types.U256From(20)) {
+	if !a.Eq(up(types.U256From(20))) {
 		t.Errorf("pop1top a: got %s, want 20", a.Hex())
 	}
-	if !top.Eq(types.U256From(10)) {
+	if !top.Eq(up(types.U256From(10))) {
 		t.Errorf("pop1top top: got %s, want 10", top.Hex())
 	}
 
 	// Modify through pointer
 	*top = types.U256From(99)
 	val, _ := s.Peek(0)
-	if !val.Eq(types.U256From(99)) {
+	if !val.Eq(up(types.U256From(99))) {
 		t.Errorf("after modify top: got %s, want 99", val.Hex())
 	}
 }
@@ -243,7 +243,7 @@ func TestStackSet(t *testing.T) {
 		t.Error("set(0) should succeed")
 	}
 	top, _ := s.Peek(0)
-	if !top.Eq(types.U256From(30)) {
+	if !top.Eq(up(types.U256From(30))) {
 		t.Errorf("set top: got %s, want 30", top.Hex())
 	}
 
@@ -268,7 +268,7 @@ func TestStackPushSlice(t *testing.T) {
 		t.Error("push [42] should succeed")
 	}
 	val, _ := s.Pop()
-	if !val.Eq(types.U256From(42)) {
+	if !val.Eq(up(types.U256From(42))) {
 		t.Errorf("push [42]: got %s, want 42", val.Hex())
 	}
 }

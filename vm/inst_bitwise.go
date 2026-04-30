@@ -113,9 +113,9 @@ func opByte(interp *Interpreter) {
 	s := interp.Stack
 	a := s.data[s.top]
 	top := &s.data[s.top-1]
-	idx := a.AsUsizeSaturated()
+	idx := types.U256AsUsizeSaturated(&a)
 	if idx < 32 {
-		*top = types.U256From(uint64(top.ByteBE(uint(idx))))
+		*top = types.U256From(uint64(types.U256ByteBE(top, uint(idx))))
 	} else {
 		*top = types.U256Zero
 	}
@@ -126,9 +126,9 @@ func opShl(interp *Interpreter) {
 	s := interp.Stack
 	shift := s.data[s.top]
 	top := &s.data[s.top-1]
-	sa := shift.AsUsizeSaturated()
+	sa := types.U256AsUsizeSaturated(&shift)
 	if sa < 256 {
-		*top = top.Shl(uint(sa))
+		top.Lsh(top, uint(sa))
 	} else {
 		*top = types.U256Zero
 	}
@@ -139,9 +139,9 @@ func opShr(interp *Interpreter) {
 	s := interp.Stack
 	shift := s.data[s.top]
 	top := &s.data[s.top-1]
-	sa := shift.AsUsizeSaturated()
+	sa := types.U256AsUsizeSaturated(&shift)
 	if sa < 256 {
-		*top = top.Shr(uint(sa))
+		top.Rsh(top, uint(sa))
 	} else {
 		*top = types.U256Zero
 	}
@@ -152,10 +152,10 @@ func opSar(interp *Interpreter) {
 	s := interp.Stack
 	shift := s.data[s.top]
 	top := &s.data[s.top-1]
-	sa := shift.AsUsizeSaturated()
+	sa := types.U256AsUsizeSaturated(&shift)
 	if sa < 256 {
-		*top = top.Sar(uint(sa))
-	} else if top.Bit(255) {
+		top.SRsh(top, uint(sa))
+	} else if types.U256Bit(top, 255) {
 		*top = types.U256Max
 	} else {
 		*top = types.U256Zero
@@ -166,5 +166,5 @@ func opSar(interp *Interpreter) {
 func opClz(interp *Interpreter) {
 	s := interp.Stack
 	top := &s.data[s.top-1]
-	*top = types.U256From(uint64(top.LeadingZeros()))
+	*top = types.U256From(uint64(types.U256LeadingZeros(top)))
 }

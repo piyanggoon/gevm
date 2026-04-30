@@ -1,7 +1,10 @@
 // Push and EOF stack opcode handlers: PUSH0-PUSH32, DUPN, SWAPN, EXCHANGE.
 package vm
 
-import "github.com/Giulio2002/gevm/types"
+import (
+	"github.com/Giulio2002/gevm/types"
+	"github.com/holiman/uint256"
+)
 
 // opPush0 — PushVal body. Fork gate (Shanghai) handled by generator.
 func opPush0(interp *Interpreter) {
@@ -13,7 +16,7 @@ func opPush0(interp *Interpreter) {
 // opPush1 — PushVal body. Reads 1 byte from bytecode.
 func opPush1(interp *Interpreter) {
 	s := interp.Stack
-	s.data[s.top] = types.Uint256{uint64(interp.Bytecode.code[interp.Bytecode.pc]), 0, 0, 0}
+	s.data[s.top] = uint256.Int{uint64(interp.Bytecode.code[interp.Bytecode.pc]), 0, 0, 0}
 	interp.Bytecode.pc++
 	s.top++
 }
@@ -23,7 +26,7 @@ func opPush2(interp *Interpreter) {
 	s := interp.Stack
 	v := uint64(interp.Bytecode.code[interp.Bytecode.pc])<<8 | uint64(interp.Bytecode.code[interp.Bytecode.pc+1])
 	interp.Bytecode.pc += 2
-	s.data[s.top] = types.Uint256{v, 0, 0, 0}
+	s.data[s.top] = uint256.Int{v, 0, 0, 0}
 	s.top++
 }
 
@@ -34,7 +37,7 @@ func opPush3(interp *Interpreter) {
 	p := interp.Bytecode.pc
 	v := uint64(c[p])<<16 | uint64(c[p+1])<<8 | uint64(c[p+2])
 	interp.Bytecode.pc = p + 3
-	s.data[s.top] = types.Uint256{v, 0, 0, 0}
+	s.data[s.top] = uint256.Int{v, 0, 0, 0}
 	s.top++
 }
 
@@ -45,7 +48,7 @@ func opPush4(interp *Interpreter) {
 	p := interp.Bytecode.pc
 	v := uint64(c[p])<<24 | uint64(c[p+1])<<16 | uint64(c[p+2])<<8 | uint64(c[p+3])
 	interp.Bytecode.pc = p + 4
-	s.data[s.top] = types.Uint256{v, 0, 0, 0}
+	s.data[s.top] = uint256.Int{v, 0, 0, 0}
 	s.top++
 }
 
@@ -61,7 +64,7 @@ func opPush20(interp *Interpreter) {
 	l0 := uint64(c[p+12])<<56 | uint64(c[p+13])<<48 | uint64(c[p+14])<<40 | uint64(c[p+15])<<32 |
 		uint64(c[p+16])<<24 | uint64(c[p+17])<<16 | uint64(c[p+18])<<8 | uint64(c[p+19])
 	interp.Bytecode.pc = p + 20
-	s.data[s.top] = types.Uint256{l0, l1, l2, 0}
+	s.data[s.top] = uint256.Int{l0, l1, l2, 0}
 	s.top++
 }
 
@@ -79,7 +82,7 @@ func opPush32(interp *Interpreter) {
 	l0 := uint64(c[p+24])<<56 | uint64(c[p+25])<<48 | uint64(c[p+26])<<40 | uint64(c[p+27])<<32 |
 		uint64(c[p+28])<<24 | uint64(c[p+29])<<16 | uint64(c[p+30])<<8 | uint64(c[p+31])
 	interp.Bytecode.pc = p + 32
-	s.data[s.top] = types.Uint256{l0, l1, l2, l3}
+	s.data[s.top] = uint256.Int{l0, l1, l2, l3}
 	s.top++
 }
 

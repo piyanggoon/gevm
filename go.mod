@@ -12,6 +12,7 @@ require (
 
 require (
 	github.com/bits-and-blooms/bitset v1.20.0 // indirect
+	github.com/holiman/uint256 v1.3.2 // indirect
 	golang.org/x/sync v0.12.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
 )

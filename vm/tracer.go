@@ -1,19 +1,21 @@
 // StructLogger is a default EVM tracer that collects per-opcode execution logs.
 package vm
 
-import "github.com/Giulio2002/gevm/types"
+import (
+	"github.com/holiman/uint256"
+)
 
 // StructLog records a single opcode execution step.
 type StructLog struct {
-	Pc      uint64               `json:"pc"`
-	Op      byte                 `json:"op"`
-	Gas     uint64               `json:"gas"`
-	GasCost uint64               `json:"gasCost"`
-	Depth   int                  `json:"depth"`
-	Stack   []types.Uint256 `json:"stack,omitempty"`
-	Memory  []byte               `json:"memory,omitempty"`
-	Err     error                `json:"-"`
-	ErrStr  string               `json:"error,omitempty"`
+	Pc      uint64        `json:"pc"`
+	Op      byte          `json:"op"`
+	Gas     uint64        `json:"gas"`
+	GasCost uint64        `json:"gasCost"`
+	Depth   int           `json:"depth"`
+	Stack   []uint256.Int `json:"stack,omitempty"`
+	Memory  []byte        `json:"memory,omitempty"`
+	Err     error         `json:"-"`
+	ErrStr  string        `json:"error,omitempty"`
 }
 
 // LogConfig controls what data the StructLogger captures.
@@ -78,7 +80,7 @@ func (l *StructLogger) captureState(pc uint64, op byte, gas, cost uint64,
 	if !l.cfg.DisableStack {
 		src := scope.StackData()
 		if len(src) > 0 {
-			stack := make([]types.Uint256, len(src))
+			stack := make([]uint256.Int, len(src))
 			copy(stack, src)
 			entry.Stack = stack
 		}

@@ -2,15 +2,16 @@
 package trace
 
 import (
+	"github.com/holiman/uint256"
 	"testing"
 
 	"github.com/Giulio2002/gevm/host"
 	"github.com/Giulio2002/gevm/opcode"
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/spec"
 	"github.com/Giulio2002/gevm/state"
-	"github.com/Giulio2002/gevm/vm"
 	spectest "github.com/Giulio2002/gevm/tests/spec"
+	"github.com/Giulio2002/gevm/types"
+	"github.com/Giulio2002/gevm/vm"
 )
 
 var (
@@ -71,7 +72,7 @@ func TestTraceSimpleReturn(t *testing.T) {
 		opcode.MSTORE,      // MSTORE
 		opcode.PUSH1, 0x20, // PUSH1 0x20
 		opcode.PUSH1, 0x00, // PUSH1 0x00
-		opcode.RETURN,      // RETURN
+		opcode.RETURN, // RETURN
 	}
 
 	result, logger := runTraced(t, code, vm.LogConfig{})
@@ -245,7 +246,7 @@ func TestTraceTxStartEnd(t *testing.T) {
 	db.InsertAccount(contract, state.AccountInfo{Code: code, CodeHash: codeHash}, nil)
 
 	hooks := &vm.Hooks{
-		OnTxStart: func(gasLimit uint64, from, to types.Address, value types.Uint256, input []byte, isCreate bool) {
+		OnTxStart: func(gasLimit uint64, from, to types.Address, value uint256.Int, input []byte, isCreate bool) {
 			txStartCalled = true
 			txStartFrom = from
 			txStartTo = to
@@ -300,7 +301,7 @@ func TestTraceEnterExit(t *testing.T) {
 	db.InsertAccount(contract, state.AccountInfo{Code: code, CodeHash: codeHash}, nil)
 
 	hooks := &vm.Hooks{
-		OnEnter: func(depth int, opType byte, from, to types.Address, input []byte, gas uint64, value types.Uint256) {
+		OnEnter: func(depth int, opType byte, from, to types.Address, input []byte, gas uint64, value uint256.Int) {
 			enterCalls = append(enterCalls, depth)
 		},
 		OnExit: func(depth int, output []byte, gasUsed uint64, err error, reverted bool) {
@@ -363,7 +364,7 @@ func TestTraceNestedCall(t *testing.T) {
 
 	var depths []int
 	hooks := &vm.Hooks{
-		OnEnter: func(depth int, opType byte, from, to types.Address, input []byte, gas uint64, value types.Uint256) {
+		OnEnter: func(depth int, opType byte, from, to types.Address, input []byte, gas uint64, value uint256.Int) {
 			depths = append(depths, depth)
 		},
 		OnExit: func(depth int, output []byte, gasUsed uint64, err error, reverted bool) {},

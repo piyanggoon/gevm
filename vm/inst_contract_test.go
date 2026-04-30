@@ -2,11 +2,12 @@
 package vm
 
 import (
+	"github.com/holiman/uint256"
 	"testing"
 
 	"github.com/Giulio2002/gevm/opcode"
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/spec"
+	"github.com/Giulio2002/gevm/types"
 )
 
 // mockHost implements vm.Host for testing contract instructions.
@@ -15,7 +16,7 @@ type mockHost struct {
 }
 
 type mockAccount struct {
-	balance  types.Uint256
+	balance  uint256.Int
 	code     types.Bytes
 	codeHash types.B256
 	nonce    uint64
@@ -29,39 +30,39 @@ func newMockHost() *mockHost {
 	}
 }
 
-func (h *mockHost) Beneficiary() types.Address                                              { return types.Address{} }
-func (h *mockHost) Timestamp() types.Uint256                                                   { return types.U256Zero }
-func (h *mockHost) BlockNumber() types.Uint256                                                 { return types.U256Zero }
-func (h *mockHost) Difficulty() types.Uint256                                                  { return types.U256Zero }
-func (h *mockHost) Prevrandao() *types.Uint256                                                 { return nil }
-func (h *mockHost) GasLimit() types.Uint256                                                    { return types.U256Zero }
-func (h *mockHost) ChainId() types.Uint256                                                     { return types.U256Zero }
-func (h *mockHost) BaseFee() types.Uint256                                                     { return types.U256Zero }
-func (h *mockHost) BlobGasPrice() types.Uint256                                                { return types.U256Zero }
-func (h *mockHost) SlotNum() types.Uint256                                                     { return types.U256Zero }
-func (h *mockHost) Caller() types.Address                                                   { return types.Address{} }
-func (h *mockHost) EffectiveGasPrice() types.Uint256                                           { return types.U256Zero }
-func (h *mockHost) BlobHash(index int) *types.Uint256                                          { return nil }
-func (h *mockHost) SelfBalance(types.Address) types.Uint256                               { return types.U256Zero }
-func (h *mockHost) BlockHash(number types.Uint256) types.B256                             { return types.B256Zero }
+func (h *mockHost) Beneficiary() types.Address              { return types.Address{} }
+func (h *mockHost) Timestamp() uint256.Int                  { return types.U256Zero }
+func (h *mockHost) BlockNumber() uint256.Int                { return types.U256Zero }
+func (h *mockHost) Difficulty() uint256.Int                 { return types.U256Zero }
+func (h *mockHost) Prevrandao() *uint256.Int                { return nil }
+func (h *mockHost) GasLimit() uint256.Int                   { return types.U256Zero }
+func (h *mockHost) ChainId() uint256.Int                    { return types.U256Zero }
+func (h *mockHost) BaseFee() uint256.Int                    { return types.U256Zero }
+func (h *mockHost) BlobGasPrice() uint256.Int               { return types.U256Zero }
+func (h *mockHost) SlotNum() uint256.Int                    { return types.U256Zero }
+func (h *mockHost) Caller() types.Address                   { return types.Address{} }
+func (h *mockHost) EffectiveGasPrice() uint256.Int          { return types.U256Zero }
+func (h *mockHost) BlobHash(index int) *uint256.Int         { return nil }
+func (h *mockHost) SelfBalance(types.Address) uint256.Int   { return types.U256Zero }
+func (h *mockHost) BlockHash(number uint256.Int) types.B256 { return types.B256Zero }
 func (h *mockHost) Log(addr types.Address, topics *[4]types.B256, numTopics int, data types.Bytes) {
 }
 func (h *mockHost) SelfDestruct(addr, target types.Address) SelfDestructResult {
 	return SelfDestructResult{}
 }
-func (h *mockHost) TLoad(addr types.Address, key types.Uint256) types.Uint256 {
+func (h *mockHost) TLoad(addr types.Address, key uint256.Int) uint256.Int {
 	return types.U256Zero
 }
-func (h *mockHost) TStore(addr types.Address, key, value types.Uint256) {}
-func (h *mockHost) SLoadInto(_ types.Address, _ *types.Uint256, out *types.Uint256) bool {
+func (h *mockHost) TStore(addr types.Address, key, value uint256.Int) {}
+func (h *mockHost) SLoadInto(_ types.Address, _ *uint256.Int, out *uint256.Int) bool {
 	*out = types.U256Zero
 	return false
 }
-func (h *mockHost) SStore(_ types.Address, _, _ *types.Uint256, out *SStoreResult) {
+func (h *mockHost) SStore(_ types.Address, _, _ *uint256.Int, out *SStoreResult) {
 	*out = SStoreResult{}
 }
 
-func (h *mockHost) Balance(addr types.Address) (types.Uint256, bool) {
+func (h *mockHost) Balance(addr types.Address) (uint256.Int, bool) {
 	acc, ok := h.accounts[addr]
 	if !ok {
 		return types.U256Zero, true
@@ -369,7 +370,7 @@ func TestCreateInitCodeSizeLimit(t *testing.T) {
 	code := make([]byte, 0, 100)
 	// Push length (too big)
 	code = append(code, opcode.PUSH32)
-	bb := tooBig.ToBytes32()
+	bb := tooBig.Bytes32()
 	code = append(code, bb[:]...)
 	// Push offset = 0
 	code = append(code, opcode.PUSH1, 0x00)

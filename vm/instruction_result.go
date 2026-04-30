@@ -5,8 +5,8 @@ type InstructionResult uint8
 
 const (
 	// Success results (0x01-0x03)
-	InstructionResultStop        InstructionResult = 0x01
-	InstructionResultReturn      InstructionResult = 0x02
+	InstructionResultStop         InstructionResult = 0x01
+	InstructionResultReturn       InstructionResult = 0x02
 	InstructionResultSelfDestruct InstructionResult = 0x03
 
 	// Revert results (0x10-0x15)
@@ -18,30 +18,30 @@ const (
 	InstructionResultInvalidExtDelegateCallTarget InstructionResult = 0x15
 
 	// Error results (0x20-0x37)
-	InstructionResultOutOfGas                    InstructionResult = 0x20
-	InstructionResultMemoryOOG                   InstructionResult = 0x21
-	InstructionResultMemoryLimitOOG              InstructionResult = 0x22
-	InstructionResultPrecompileOOG               InstructionResult = 0x23
-	InstructionResultInvalidOperandOOG           InstructionResult = 0x24
-	InstructionResultReentrancySentryOOG         InstructionResult = 0x25
-	InstructionResultOpcodeNotFound              InstructionResult = 0x26
-	InstructionResultCallNotAllowedInsideStatic  InstructionResult = 0x27
-	InstructionResultStateChangeDuringStaticCall InstructionResult = 0x28
-	InstructionResultInvalidFEOpcode             InstructionResult = 0x29
-	InstructionResultInvalidJump                 InstructionResult = 0x2a
-	InstructionResultNotActivated                InstructionResult = 0x2b
-	InstructionResultStackUnderflow              InstructionResult = 0x2c
-	InstructionResultStackOverflow               InstructionResult = 0x2d
-	InstructionResultOutOfOffset                 InstructionResult = 0x2e
-	InstructionResultCreateCollision             InstructionResult = 0x2f
-	InstructionResultOverflowPayment             InstructionResult = 0x30
-	InstructionResultPrecompileError             InstructionResult = 0x31
-	InstructionResultNonceOverflow               InstructionResult = 0x32
-	InstructionResultCreateContractSizeLimit     InstructionResult = 0x33
+	InstructionResultOutOfGas                     InstructionResult = 0x20
+	InstructionResultMemoryOOG                    InstructionResult = 0x21
+	InstructionResultMemoryLimitOOG               InstructionResult = 0x22
+	InstructionResultPrecompileOOG                InstructionResult = 0x23
+	InstructionResultInvalidOperandOOG            InstructionResult = 0x24
+	InstructionResultReentrancySentryOOG          InstructionResult = 0x25
+	InstructionResultOpcodeNotFound               InstructionResult = 0x26
+	InstructionResultCallNotAllowedInsideStatic   InstructionResult = 0x27
+	InstructionResultStateChangeDuringStaticCall  InstructionResult = 0x28
+	InstructionResultInvalidFEOpcode              InstructionResult = 0x29
+	InstructionResultInvalidJump                  InstructionResult = 0x2a
+	InstructionResultNotActivated                 InstructionResult = 0x2b
+	InstructionResultStackUnderflow               InstructionResult = 0x2c
+	InstructionResultStackOverflow                InstructionResult = 0x2d
+	InstructionResultOutOfOffset                  InstructionResult = 0x2e
+	InstructionResultCreateCollision              InstructionResult = 0x2f
+	InstructionResultOverflowPayment              InstructionResult = 0x30
+	InstructionResultPrecompileError              InstructionResult = 0x31
+	InstructionResultNonceOverflow                InstructionResult = 0x32
+	InstructionResultCreateContractSizeLimit      InstructionResult = 0x33
 	InstructionResultCreateContractStartingWithEF InstructionResult = 0x34
-	InstructionResultCreateInitCodeSizeLimit     InstructionResult = 0x35
-	InstructionResultFatalExternalError          InstructionResult = 0x36
-	InstructionResultInvalidImmediateEncoding    InstructionResult = 0x37
+	InstructionResultCreateInitCodeSizeLimit      InstructionResult = 0x35
+	InstructionResultFatalExternalError           InstructionResult = 0x36
+	InstructionResultInvalidImmediateEncoding     InstructionResult = 0x37
 
 	// Transaction validation errors (0x40-0x4B)
 	InstructionResultInvalidTxType          InstructionResult = 0x40

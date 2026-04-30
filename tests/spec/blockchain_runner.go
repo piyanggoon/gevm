@@ -4,15 +4,16 @@ package spec
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/holiman/uint256"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/Giulio2002/gevm/host"
-	"github.com/Giulio2002/gevm/types"
 	gevmspec "github.com/Giulio2002/gevm/spec"
 	"github.com/Giulio2002/gevm/state"
+	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/vm"
 )
 
@@ -126,7 +127,7 @@ func executeBlockchainTest(filePath, testName string, tc *BlockchainTestCase) (r
 	db := BuildMemDB(tc.Pre)
 
 	// Insert genesis block hash at block 0
-	genesisNum := tc.GenesisBlockHeader.Number.V.AsUsize()
+	genesisNum := types.U256AsUsize(&tc.GenesisBlockHeader.Number.V)
 	db.InsertBlockHash(genesisNum, tc.GenesisBlockHeader.Hash.V)
 
 	// Create EVM
@@ -162,7 +163,7 @@ func executeBlockchainTest(filePath, testName string, tc *BlockchainTestCase) (r
 	parentBlockHash := tc.GenesisBlockHeader.Hash.V
 	parentExcessBlobGas := uint64(0)
 	if tc.GenesisBlockHeader.ExcessBlobGas != nil {
-		parentExcessBlobGas = tc.GenesisBlockHeader.ExcessBlobGas.V.AsUsize()
+		parentExcessBlobGas = types.U256AsUsize(&tc.GenesisBlockHeader.ExcessBlobGas.V)
 	}
 
 	// Process each block
@@ -201,7 +202,7 @@ func executeBlockchainTest(filePath, testName string, tc *BlockchainTestCase) (r
 		evm.Block = blockEnv
 
 		if block.BlockHeader.ExcessBlobGas != nil {
-			v := block.BlockHeader.ExcessBlobGas.V.AsUsize()
+			v := types.U256AsUsize(&block.BlockHeader.ExcessBlobGas.V)
 			thisExcessBlobGas = &v
 		}
 
@@ -211,7 +212,7 @@ func executeBlockchainTest(filePath, testName string, tc *BlockchainTestCase) (r
 		}
 
 		// Pre-block system calls (skip for block 0/genesis)
-		blockNum := evm.Block.Number.AsUsize()
+		blockNum := types.U256AsUsize(&evm.Block.Number)
 		if blockNum > 0 {
 			// EIP-2935: historical block hashes (Prague+)
 			if forkID.IsEnabledIn(gevmspec.Prague) {
@@ -316,15 +317,15 @@ func blockTxToTransaction(btx *BlockTx) (host.Transaction, error) {
 	tx := host.Transaction{
 		Caller:   btx.Sender.V,
 		Input:    btx.Data.V,
-		GasLimit: btx.GasLimit.V.AsUsize(),
+		GasLimit: types.U256AsUsize(&btx.GasLimit.V),
 		Value:    btx.Value.V,
-		Nonce:    btx.Nonce.V.AsUsize(),
+		Nonce:    types.U256AsUsize(&btx.Nonce.V),
 	}
 
 	// Determine tx type
 	txType := host.TxTypeLegacy
 	if btx.Type != nil {
-		switch btx.Type.V.AsUsize() {
+		switch types.U256AsUsize(&btx.Type.V) {
 		case 1:
 			txType = host.TxTypeEIP2930
 		case 2:
@@ -435,8 +436,10 @@ func postBlockTransition(evm *host.Evm, block *BlockData, forkID gevmspec.ForkID
 	// Withdrawals (Shanghai+, EIP-4895)
 	if forkID.IsEnabledIn(gevmspec.Shanghai) {
 		for _, w := range block.Withdrawals {
-			amount := w.Amount.V.AsUsize()
-			amountWei := types.U256From(amount).Mul(types.U256From(oneGwei))
+			amount := types.U256AsUsize(&w.Amount.V)
+			amountU := types.U256From(amount)
+			gweiU := types.U256From(oneGwei)
+			amountWei := types.Mul(&amountU, &gweiU)
 			evm.Journal.BalanceIncr(w.Address.V, amountWei)
 		}
 	}
@@ -510,7 +513,7 @@ func validatePostState(journal *state.Journal, expected map[HexAddr]*TestAccount
 		}
 
 		// Build a map of expected storage slots for lookup
-		expectedStorage := make(map[types.Uint256]types.Uint256)
+		expectedStorage := make(map[uint256.Int]uint256.Int)
 		for hexSlot, hexVal := range expectedAcct.Storage {
 			expectedStorage[hexSlot.V.ToU256()] = hexVal.V
 		}

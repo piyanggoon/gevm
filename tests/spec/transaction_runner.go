@@ -5,13 +5,14 @@ package spec
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/holiman/uint256"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
-	"github.com/Giulio2002/gevm/types"
 	gevmspec "github.com/Giulio2002/gevm/spec"
+	"github.com/Giulio2002/gevm/types"
 )
 
 // TxTestForkToForkID maps transaction test fork names to ForkID values.
@@ -244,23 +245,23 @@ func validateTxForFork(tx *DecodedTx, forkID gevmspec.ForkID) error {
 	if tx.S.IsZero() {
 		return fmt.Errorf("S is zero")
 	}
-	if !tx.R.Lt(secp256k1N) {
+	if !tx.R.Lt(&secp256k1N) {
 		return fmt.Errorf("R >= secp256k1 order")
 	}
-	if !tx.S.Lt(secp256k1N) {
+	if !tx.S.Lt(&secp256k1N) {
 		return fmt.Errorf("S >= secp256k1 order")
 	}
 
 	// EIP-2: s must be <= secp256k1n/2 (Homestead+)
 	if forkID.IsEnabledIn(gevmspec.Homestead) {
-		if tx.S.Gt(secp256k1HalfN) {
+		if tx.S.Gt(&secp256k1HalfN) {
 			return fmt.Errorf("EIP-2: s > secp256k1n/2")
 		}
 	}
 
 	// V validation for typed transactions (must be 0 or 1)
 	if tx.TxType > 0 {
-		vU64 := tx.V.AsUsize()
+		vU64 := types.U256AsUsize(&tx.V)
 		if vU64 > 1 {
 			return fmt.Errorf("invalid yParity: %d", vU64)
 		}
@@ -268,7 +269,7 @@ func validateTxForFork(tx *DecodedTx, forkID gevmspec.ForkID) error {
 
 	// V validation for legacy transactions
 	if tx.TxType == 0 {
-		vU64 := tx.V.AsUsize()
+		vU64 := types.U256AsUsize(&tx.V)
 		if vU64 != 27 && vU64 != 28 {
 			// EIP-155: V = 2*chainId + 35 + {0,1}
 			if vU64 < 35 {
@@ -288,14 +289,14 @@ func validateTxForFork(tx *DecodedTx, forkID gevmspec.ForkID) error {
 
 	// --- EIP-1559: priority fee must not exceed max fee ---
 	if tx.TxType == 2 || tx.TxType == 3 {
-		if tx.MaxPriorityFeePerGas.Gt(tx.MaxFeePerGas) {
+		if tx.MaxPriorityFeePerGas.Gt(&tx.MaxFeePerGas) {
 			return fmt.Errorf("maxPriorityFeePerGas > maxFeePerGas")
 		}
 	}
 
 	// --- Gas limit * gas price overflow check ---
 	if tx.GasLimit > 0 {
-		var gasPrice types.Uint256
+		var gasPrice uint256.Int
 		switch tx.TxType {
 		case 0, 1:
 			gasPrice = tx.GasPrice
@@ -304,9 +305,9 @@ func validateTxForFork(tx *DecodedTx, forkID gevmspec.ForkID) error {
 		}
 		if !gasPrice.IsZero() {
 			gasLimitU := types.U256From(tx.GasLimit)
-			product := gasPrice.Mul(gasLimitU)
+			product := types.Mul(&gasPrice, &gasLimitU)
 			// Check for overflow using division: product / gasLimit should equal gasPrice
-			quotient := product.Div(gasLimitU)
+			quotient := types.Div(&product, &gasLimitU)
 			if quotient != gasPrice {
 				return fmt.Errorf("gasLimit * gasPrice overflow")
 			}

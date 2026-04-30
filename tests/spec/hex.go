@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/holiman/uint256"
 	"strings"
 
 	"github.com/Giulio2002/gevm/types"
@@ -24,9 +25,9 @@ func hexToBytes(s string) ([]byte, error) {
 
 // --- HexU256 ---
 
-// HexU256 wraps types.Uint256 with JSON hex string deserialization.
+// HexU256 wraps uint256.Int with JSON hex string deserialization.
 type HexU256 struct {
-	V types.Uint256
+	V uint256.Int
 }
 
 func (h *HexU256) UnmarshalJSON(data []byte) error {

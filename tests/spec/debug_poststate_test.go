@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/Giulio2002/gevm/host"
-	"github.com/Giulio2002/gevm/types"
 	gevmspec "github.com/Giulio2002/gevm/spec"
+	"github.com/Giulio2002/gevm/types"
 )
 
 // TestDebugPostState runs post-state validation on specific directories.
@@ -123,16 +123,16 @@ func TestDebugClearReturnBuffer(t *testing.T) {
 				// Extract target opcode from calldata (param1, starts at byte 4, 32 bytes)
 				var targetOpcode uint64
 				if len(tx.Input) >= 36 {
-					// param1 is at bytes 4..36 (big-endian Uint256)
+					// param1 is at bytes 4..36 (big-endian uint256.Int)
 					param1 := types.U256FromBytes32([32]byte(tx.Input[4:36]))
-					targetOpcode = param1.AsUsize()
+					targetOpcode = types.U256AsUsize(&param1)
 				}
 
 				// Extract size from calldata (param3, starts at byte 68, 32 bytes)
 				var sizeParam uint64
 				if len(tx.Input) >= 100 {
 					param3 := types.U256FromBytes32([32]byte(tx.Input[68:100]))
-					sizeParam = param3.AsUsize()
+					sizeParam = types.U256AsUsize(&param3)
 				}
 
 				db := BuildMemDB(unit.Pre)
@@ -208,16 +208,16 @@ func TestDebugClearReturnBuffer(t *testing.T) {
 							gotBal := acc.Info.Balance
 							wantBal := expectedAcct.Balance.V
 							if gotBal != wantBal {
-								gasPrice := tx.GasPrice.AsUsize()
+								gasPrice := types.U256AsUsize(&tx.GasPrice)
 								var deltaGas uint64
 								var sign string
-								if gotBal.Gt(wantBal) {
-									delta := gotBal.Sub(wantBal)
-									deltaGas = delta.AsUsize() / gasPrice
+								if gotBal.Gt(&wantBal) {
+									delta := types.Sub(&gotBal, &wantBal)
+									deltaGas = types.U256AsUsize(&delta) / gasPrice
 									sign = "over"
 								} else {
-									delta := wantBal.Sub(gotBal)
-									deltaGas = delta.AsUsize() / gasPrice
+									delta := types.Sub(&wantBal, &gotBal)
+									deltaGas = types.U256AsUsize(&delta) / gasPrice
 									sign = "under"
 								}
 								perByte := uint64(0)

@@ -1,6 +1,7 @@
 package types
 
 import (
+	"github.com/holiman/uint256"
 	"testing"
 )
 
@@ -58,11 +59,11 @@ func TestB256FromSlice(t *testing.T) {
 }
 
 func TestB256U256Roundtrip(t *testing.T) {
-	val := Uint256{0xdeadbeef, 0xcafebabe, 0x12345678, 0x9abcdef0}
+	val := uint256.Int{0xdeadbeef, 0xcafebabe, 0x12345678, 0x9abcdef0}
 	b := B256FromU256(val)
 	got := b.ToU256()
-	if !got.Eq(val) {
-		t.Errorf("B256-Uint256 roundtrip failed: got %s, want %s", got.Hex(), val.Hex())
+	if !got.Eq(&val) {
+		t.Errorf("B256-uint256.Int roundtrip failed: got %s, want %s", got.Hex(), val.Hex())
 	}
 }
 

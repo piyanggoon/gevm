@@ -1,9 +1,10 @@
 package vm
 
 import (
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/spec"
 	"github.com/Giulio2002/gevm/state"
+	"github.com/Giulio2002/gevm/types"
+	"github.com/holiman/uint256"
 )
 
 // ForkGas holds pre-computed static gas costs for the few opcodes whose
@@ -56,11 +57,11 @@ func buildForkGas(forkID spec.ForkID) ForkGas {
 		fg.Sload = spec.GasIstanbulSloadGas // 800
 	}
 	if forkID.IsEnabledIn(spec.Berlin) {
-		fg.Balance = spec.GasWarmStorageReadCost      // 100
-		fg.ExtCodeSize = spec.GasWarmStorageReadCost  // 100
-		fg.ExtCodeHash = spec.GasWarmStorageReadCost  // 100
-		fg.Sload = spec.GasWarmStorageReadCost        // 100
-		fg.Call = spec.GasWarmStorageReadCost          // 100
+		fg.Balance = spec.GasWarmStorageReadCost     // 100
+		fg.ExtCodeSize = spec.GasWarmStorageReadCost // 100
+		fg.ExtCodeHash = spec.GasWarmStorageReadCost // 100
+		fg.Sload = spec.GasWarmStorageReadCost       // 100
+		fg.Call = spec.GasWarmStorageReadCost        // 100
 	}
 	return fg
 }
@@ -111,7 +112,7 @@ type Inputs struct {
 	BytecodeAddress types.Address
 	CallerAddress   types.Address
 	Input           types.Bytes
-	CallValue       types.Uint256
+	CallValue       uint256.Int
 }
 
 // RuntimeFlags controls interpreter execution behavior.
@@ -123,15 +124,15 @@ type RuntimeFlags struct {
 // Interpreter is the main EVM interpreter that ties together
 // bytecode, gas, stack, memory, inputs, and execution control.
 type Interpreter struct {
-	Bytecode       *Bytecode
-	Gas            Gas
-	Stack          *Stack
-	ReturnData     types.Bytes
-	Memory         *Memory
-	Input          Inputs
-	RuntimeFlag    RuntimeFlags
-	GasParams *spec.GasParams
-	ForkGas   ForkGas
+	Bytecode    *Bytecode
+	Gas         Gas
+	Stack       *Stack
+	ReturnData  types.Bytes
+	Memory      *Memory
+	Input       Inputs
+	RuntimeFlag RuntimeFlags
+	GasParams   *spec.GasParams
+	ForkGas     ForkGas
 
 	// ActionData holds a pending frame action (CALL/CREATE).
 	// HasAction == true means the interpreter wants a sub-frame.
@@ -322,9 +323,9 @@ func (interp *Interpreter) ResizeMemory(offset, length int) bool {
 	return true
 }
 
-// asUsizeOrFail converts a Uint256 to int, halting with InvalidOperandOOG if it overflows.
+// asUsizeOrFail converts a uint256.Int to int, halting with InvalidOperandOOG if it overflows.
 // Returns (value, true) on success, (0, false) on failure.
-func (interp *Interpreter) asUsizeOrFail(val types.Uint256) (int, bool) {
+func (interp *Interpreter) asUsizeOrFail(val uint256.Int) (int, bool) {
 	if val[1] != 0 || val[2] != 0 || val[3] != 0 || val[0] > uint64(maxInt) {
 		interp.Halt(InstructionResultInvalidOperandOOG)
 		return 0, false
@@ -336,27 +337,27 @@ func (interp *Interpreter) asUsizeOrFail(val types.Uint256) (int, bool) {
 type Host interface {
 	// Block info
 	Beneficiary() types.Address
-	Timestamp() types.Uint256
-	BlockNumber() types.Uint256
-	Difficulty() types.Uint256
-	Prevrandao() *types.Uint256
-	GasLimit() types.Uint256
-	ChainId() types.Uint256
-	BaseFee() types.Uint256
-	BlobGasPrice() types.Uint256
-	SlotNum() types.Uint256
+	Timestamp() uint256.Int
+	BlockNumber() uint256.Int
+	Difficulty() uint256.Int
+	Prevrandao() *uint256.Int
+	GasLimit() uint256.Int
+	ChainId() uint256.Int
+	BaseFee() uint256.Int
+	BlobGasPrice() uint256.Int
+	SlotNum() uint256.Int
 
 	// Tx info
 	Caller() types.Address // tx origin
-	EffectiveGasPrice() types.Uint256
-	BlobHash(index int) *types.Uint256
+	EffectiveGasPrice() uint256.Int
+	BlobHash(index int) *uint256.Int
 
 	// Account access
-	Balance(addr types.Address) (types.Uint256, bool)  // balance, cold
-	CodeSize(addr types.Address) (int, bool)             // size, cold
+	Balance(addr types.Address) (uint256.Int, bool) // balance, cold
+	CodeSize(addr types.Address) (int, bool)        // size, cold
 	CodeHash(addr types.Address) (types.B256, bool) // hash, cold
 	Code(addr types.Address) (types.Bytes, bool)    // code, cold
-	SelfBalance(addr types.Address) types.Uint256
+	SelfBalance(addr types.Address) uint256.Int
 
 	// LoadAccountCode loads account for CALL gas calculation.
 	// Returns code, code hash, cold flag, and empty flag in one call.
@@ -366,15 +367,15 @@ type Host interface {
 	// SLoadInto reads a storage value. Key is read by pointer to avoid 32B interface copy.
 	// out receives the loaded value (key and out may alias the same stack slot).
 	// Returns true if the access was cold.
-	SLoadInto(addr types.Address, key *types.Uint256, out *types.Uint256) bool
+	SLoadInto(addr types.Address, key *uint256.Int, out *uint256.Int) bool
 	// SStore writes a value to storage. Key and value passed by pointer to avoid 64B copy.
 	// Results are written into the provided pointer to avoid a 97-byte struct return copy.
-	SStore(addr types.Address, key *types.Uint256, value *types.Uint256, out *SStoreResult)
-	TLoad(addr types.Address, key types.Uint256) types.Uint256
-	TStore(addr types.Address, key types.Uint256, value types.Uint256)
+	SStore(addr types.Address, key *uint256.Int, value *uint256.Int, out *SStoreResult)
+	TLoad(addr types.Address, key uint256.Int) uint256.Int
+	TStore(addr types.Address, key uint256.Int, value uint256.Int)
 
 	// Block hash
-	BlockHash(number types.Uint256) types.B256
+	BlockHash(number uint256.Int) types.B256
 
 	// Logging — topics passed as fixed array + count to avoid heap allocation.
 	Log(addr types.Address, topics *[4]types.B256, numTopics int, data types.Bytes)
@@ -412,10 +413,10 @@ const maxInt = int(^uint(0) >> 1)
 
 // --- OpContext interface implementation ---
 
-func (interp *Interpreter) MemoryData() []byte              { return interp.Memory.ContextMemory() }
-func (interp *Interpreter) StackData() []types.Uint256  { return interp.Stack.data[:interp.Stack.top] }
-func (interp *Interpreter) StackLen() int                    { return interp.Stack.top }
+func (interp *Interpreter) MemoryData() []byte          { return interp.Memory.ContextMemory() }
+func (interp *Interpreter) StackData() []uint256.Int    { return interp.Stack.data[:interp.Stack.top] }
+func (interp *Interpreter) StackLen() int               { return interp.Stack.top }
 func (interp *Interpreter) CallerAddr() types.Address   { return interp.Input.CallerAddress }
 func (interp *Interpreter) ContractAddr() types.Address { return interp.Input.TargetAddress }
-func (interp *Interpreter) CallValue() types.Uint256    { return interp.Input.CallValue }
-func (interp *Interpreter) CallInput() []byte                { return interp.Input.Input }
+func (interp *Interpreter) CallValue() uint256.Int      { return interp.Input.CallValue }
+func (interp *Interpreter) CallInput() []byte           { return interp.Input.Input }

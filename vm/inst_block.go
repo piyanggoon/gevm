@@ -2,8 +2,8 @@
 package vm
 
 import (
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/spec"
+	"github.com/Giulio2002/gevm/types"
 )
 
 // opBlockhash — UnaryOp body (needs Host). Pops block number, pushes hash.
@@ -98,7 +98,7 @@ func opBlobhash(interp *Interpreter, host Host) {
 		return
 	}
 	top := &s.data[s.top-1]
-	idx := int(top.AsUsizeSaturated())
+	idx := int(types.U256AsUsizeSaturated(top))
 	hash := host.BlobHash(idx)
 	if hash != nil {
 		*top = *hash

@@ -1,6 +1,7 @@
 package spec
 
 import (
+	"github.com/holiman/uint256"
 	"testing"
 
 	"github.com/Giulio2002/gevm/types"
@@ -167,7 +168,7 @@ func TestInitialTxGas(t *testing.T) {
 
 func TestLog2floor(t *testing.T) {
 	cases := []struct {
-		val  types.Uint256
+		val  uint256.Int
 		want uint64
 	}{
 		{types.U256From(1), 0},

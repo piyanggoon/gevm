@@ -2,10 +2,11 @@ package vm
 
 import (
 	"encoding/binary"
+	"github.com/holiman/uint256"
 	"sync"
 
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/spec"
+	"github.com/Giulio2002/gevm/types"
 )
 
 // childMemPool reuses Memory structs for child contexts.
@@ -116,12 +117,12 @@ func (m *Memory) GetWord(offset int) types.B256 {
 	return b
 }
 
-// GetU256 returns a Uint256 from memory at the given offset (big-endian).
+// GetU256 returns a uint256.Int from memory at the given offset (big-endian).
 // Reads directly from the buffer to avoid an intermediate B256 copy.
-func (m *Memory) GetU256(offset int) types.Uint256 {
+func (m *Memory) GetU256(offset int) uint256.Int {
 	p := m.checkpoint + offset
 	b := (*m.buffer)[p : p+32 : p+32]
-	return types.Uint256{
+	return uint256.Int{
 		binary.BigEndian.Uint64(b[24:]),
 		binary.BigEndian.Uint64(b[16:]),
 		binary.BigEndian.Uint64(b[8:]),
@@ -139,9 +140,9 @@ func (m *Memory) SetWord(offset int, value types.B256) {
 	copy((*m.buffer)[m.checkpoint+offset:], value[:])
 }
 
-// SetU256 sets a Uint256 at the given offset (big-endian).
-func (m *Memory) SetU256(offset int, value types.Uint256) {
-	value.PutBytes32((*m.buffer)[m.checkpoint+offset:])
+// SetU256 sets a uint256.Int at the given offset (big-endian).
+func (m *Memory) SetU256(offset int, value uint256.Int) {
+	types.U256PutBytes32(&value, (*m.buffer)[m.checkpoint+offset:])
 }
 
 // Set copies data into memory at the given offset.

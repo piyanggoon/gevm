@@ -2,6 +2,7 @@ package state
 
 import (
 	"github.com/Giulio2002/gevm/types"
+	"github.com/holiman/uint256"
 )
 
 // SelfdestructionRevertStatus tracks the selfdestruct state for revert purposes.
@@ -50,15 +51,15 @@ type JournalEntry struct {
 	// Balance stores balance-related data.
 	// Used by: AccountDestroyed (had_balance), BalanceChange (old_balance),
 	//          BalanceTransfer (balance).
-	Balance types.Uint256
+	Balance uint256.Int
 
 	// Key stores the storage key.
 	// Used by: StorageChanged, StorageWarmed, TransientStorageChange.
-	Key types.Uint256
+	Key uint256.Int
 
 	// HadValue stores the previous storage value.
 	// Used by: StorageChanged, TransientStorageChange.
-	HadValue types.Uint256
+	HadValue uint256.Int
 
 	// PrevNonce stores the previous nonce value.
 	// Used by: NonceChange.
@@ -79,7 +80,7 @@ func JournalEntryAccountWarmed(address types.Address) JournalEntry {
 	return JournalEntry{Kind: JournalAccountWarmed, Address: address}
 }
 
-func JournalEntryAccountDestroyed(address, target types.Address, status SelfdestructionRevertStatus, hadBalance types.Uint256) JournalEntry {
+func JournalEntryAccountDestroyed(address, target types.Address, status SelfdestructionRevertStatus, hadBalance uint256.Int) JournalEntry {
 	return JournalEntry{
 		Kind:            JournalAccountDestroyed,
 		Address:         address,
@@ -93,11 +94,11 @@ func JournalEntryAccountTouched(address types.Address) JournalEntry {
 	return JournalEntry{Kind: JournalAccountTouched, Address: address}
 }
 
-func JournalEntryBalanceChange(address types.Address, oldBalance types.Uint256) JournalEntry {
+func JournalEntryBalanceChange(address types.Address, oldBalance uint256.Int) JournalEntry {
 	return JournalEntry{Kind: JournalBalanceChange, Address: address, Balance: oldBalance}
 }
 
-func JournalEntryBalanceTransfer(from, to types.Address, balance types.Uint256) JournalEntry {
+func JournalEntryBalanceTransfer(from, to types.Address, balance uint256.Int) JournalEntry {
 	return JournalEntry{Kind: JournalBalanceTransfer, Address: from, Target: to, Balance: balance}
 }
 
@@ -113,15 +114,15 @@ func JournalEntryAccountCreated(address types.Address, isCreatedGlobally bool) J
 	return JournalEntry{Kind: JournalAccountCreated, Address: address, IsCreatedGlobally: isCreatedGlobally}
 }
 
-func JournalEntryStorageChanged(address types.Address, key, hadValue types.Uint256) JournalEntry {
+func JournalEntryStorageChanged(address types.Address, key, hadValue uint256.Int) JournalEntry {
 	return JournalEntry{Kind: JournalStorageChanged, Address: address, Key: key, HadValue: hadValue}
 }
 
-func JournalEntryStorageWarmed(address types.Address, key types.Uint256) JournalEntry {
+func JournalEntryStorageWarmed(address types.Address, key uint256.Int) JournalEntry {
 	return JournalEntry{Kind: JournalStorageWarmed, Address: address, Key: key}
 }
 
-func JournalEntryTransientStorageChange(address types.Address, key, hadValue types.Uint256) JournalEntry {
+func JournalEntryTransientStorageChange(address types.Address, key, hadValue uint256.Int) JournalEntry {
 	return JournalEntry{Kind: JournalTransientStorageChange, Address: address, Key: key, HadValue: hadValue}
 }
 
@@ -155,10 +156,10 @@ func (e *JournalEntry) Revert(state EvmState, transientStorage TransientStorage,
 		case SelfdestructRepeated:
 			// do nothing
 		}
-		acc.Info.Balance = acc.Info.Balance.Add(e.Balance)
+		acc.Info.Balance.Add(&acc.Info.Balance, &e.Balance)
 		if e.Address != e.Target {
 			target := state[e.Target]
-			target.Info.Balance = target.Info.Balance.Sub(e.Balance)
+			target.Info.Balance.Sub(&target.Info.Balance, &e.Balance)
 		}
 
 	case JournalBalanceChange:
@@ -166,9 +167,9 @@ func (e *JournalEntry) Revert(state EvmState, transientStorage TransientStorage,
 
 	case JournalBalanceTransfer:
 		from := state[e.Address]
-		from.Info.Balance = from.Info.Balance.Add(e.Balance)
+		from.Info.Balance.Add(&from.Info.Balance, &e.Balance)
 		to := state[e.Target]
-		to.Info.Balance = to.Info.Balance.Sub(e.Balance)
+		to.Info.Balance.Sub(&to.Info.Balance, &e.Balance)
 
 	case JournalNonceChange:
 		state[e.Address].Info.Nonce = e.PrevNonce

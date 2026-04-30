@@ -4,9 +4,10 @@ package spec
 
 import (
 	"fmt"
+	"github.com/holiman/uint256"
 
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/state"
+	"github.com/Giulio2002/gevm/types"
 )
 
 // MemDB is a simple in-memory database for spec tests.
@@ -18,7 +19,7 @@ type MemDB struct {
 
 type memAccount struct {
 	info    state.AccountInfo
-	storage map[types.Uint256]types.Uint256
+	storage map[uint256.Int]uint256.Int
 }
 
 // NewMemDB creates an empty MemDB.
@@ -30,7 +31,7 @@ func NewMemDB() *MemDB {
 }
 
 // InsertAccount adds an account with its storage to the database.
-func (db *MemDB) InsertAccount(addr types.Address, info state.AccountInfo, storage map[types.Uint256]types.Uint256) {
+func (db *MemDB) InsertAccount(addr types.Address, info state.AccountInfo, storage map[uint256.Int]uint256.Int) {
 	db.accounts[addr] = &memAccount{
 		info:    info,
 		storage: storage,
@@ -63,7 +64,7 @@ func (db *MemDB) CodeByHash(codeHash types.B256) (types.Bytes, error) {
 	return nil, fmt.Errorf("code not found for hash %s", codeHash.Hex())
 }
 
-func (db *MemDB) Storage(address types.Address, index types.Uint256) (types.Uint256, error) {
+func (db *MemDB) Storage(address types.Address, index uint256.Int) (uint256.Int, error) {
 	acc, ok := db.accounts[address]
 	if !ok {
 		return types.U256Zero, nil
@@ -97,7 +98,7 @@ func (db *MemDB) BlockHash(number uint64) (types.B256, error) {
 }
 
 // ForEachAccount iterates over all pre-state accounts.
-func (db *MemDB) ForEachAccount(fn func(addr types.Address, info state.AccountInfo, storage map[types.Uint256]types.Uint256)) {
+func (db *MemDB) ForEachAccount(fn func(addr types.Address, info state.AccountInfo, storage map[uint256.Int]uint256.Int)) {
 	for addr, acc := range db.accounts {
 		fn(addr, acc.info, acc.storage)
 	}
@@ -125,7 +126,7 @@ func BuildMemDB(pre map[HexAddr]*TestAccountInfo) *MemDB {
 			Code:     code,
 		}
 
-		storage := make(map[types.Uint256]types.Uint256)
+		storage := make(map[uint256.Int]uint256.Int)
 		for hexKey, hexVal := range acct.Storage {
 			storage[hexKey.V.ToU256()] = hexVal.V
 		}

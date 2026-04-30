@@ -1,22 +1,23 @@
 package state
 
 import (
+	"github.com/holiman/uint256"
 	"testing"
 
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/spec"
+	"github.com/Giulio2002/gevm/types"
 )
 
 // mockDB is a simple in-memory database for testing.
 type mockDB struct {
 	accounts map[types.Address]*AccountInfo
-	storage  map[types.Address]map[types.Uint256]types.Uint256
+	storage  map[types.Address]map[uint256.Int]uint256.Int
 }
 
 func newMockDB() *mockDB {
 	return &mockDB{
 		accounts: make(map[types.Address]*AccountInfo),
-		storage:  make(map[types.Address]map[types.Uint256]types.Uint256),
+		storage:  make(map[types.Address]map[uint256.Int]uint256.Int),
 	}
 }
 
@@ -32,7 +33,7 @@ func (db *mockDB) CodeByHash(codeHash types.B256) (types.Bytes, error) {
 	return nil, nil
 }
 
-func (db *mockDB) Storage(address types.Address, index types.Uint256) (types.Uint256, error) {
+func (db *mockDB) Storage(address types.Address, index uint256.Int) (uint256.Int, error) {
 	if slots, ok := db.storage[address]; ok {
 		if val, found := slots[index]; found {
 			return val, nil
@@ -156,7 +157,7 @@ func TestJournalTransferSelfTransfer(t *testing.T) {
 func TestJournalSloadSstore(t *testing.T) {
 	db := newMockDB()
 	a1 := addr(1)
-	db.storage[a1] = map[types.Uint256]types.Uint256{
+	db.storage[a1] = map[uint256.Int]uint256.Int{
 		u256(1): u256(42),
 	}
 
@@ -614,7 +615,7 @@ func TestJournalDepth(t *testing.T) {
 func TestJournalSStoreNoChangeNoEntry(t *testing.T) {
 	db := newMockDB()
 	a1 := addr(1)
-	db.storage[a1] = map[types.Uint256]types.Uint256{
+	db.storage[a1] = map[uint256.Int]uint256.Int{
 		u256(1): u256(42),
 	}
 
@@ -659,7 +660,7 @@ func TestJournalWarmAddresses(t *testing.T) {
 	}
 
 	// Set access list
-	accessList := map[types.Address]map[types.Uint256]struct{}{
+	accessList := map[types.Address]map[uint256.Int]struct{}{
 		addr(0xAA): {u256(1): {}, u256(2): {}},
 	}
 	j.WarmAddresses.SetAccessList(accessList)

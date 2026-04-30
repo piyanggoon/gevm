@@ -2,22 +2,23 @@ package state
 
 import (
 	"github.com/Giulio2002/gevm/types"
+	"github.com/holiman/uint256"
 )
 
 // EvmState is the main state map: Address -> Account.
 type EvmState map[types.Address]*Account
 
-// EvmStorage is per-account storage: Uint256 key -> EvmStorageSlot.
-type EvmStorage map[types.Uint256]*EvmStorageSlot
+// EvmStorage is per-account storage: uint256.Int key -> EvmStorageSlot.
+type EvmStorage map[uint256.Int]*EvmStorageSlot
 
 // TransientKey is a composite key for transient storage (address + storage key).
 type TransientKey struct {
 	Address types.Address
-	Key     types.Uint256
+	Key     uint256.Int
 }
 
 // TransientStorage is EIP-1153 transient storage, cleared after each transaction.
-type TransientStorage map[TransientKey]types.Uint256
+type TransientStorage map[TransientKey]uint256.Int
 
 // StateLoad wraps state access results with a cold/warm indicator for gas metering.
 type StateLoad[T any] struct {

@@ -1,12 +1,13 @@
 package spec
 
 import (
+	"github.com/holiman/uint256"
 	"testing"
 
 	"github.com/Giulio2002/gevm/host"
-	"github.com/Giulio2002/gevm/types"
 	gevmspec "github.com/Giulio2002/gevm/spec"
 	"github.com/Giulio2002/gevm/state"
+	"github.com/Giulio2002/gevm/types"
 )
 
 // TestSstoreRefundBasic verifies that SSTORE produces the correct refund
@@ -29,7 +30,7 @@ func TestSstoreRefundBasic(t *testing.T) {
 		Nonce:    0,
 		CodeHash: types.Keccak256(code),
 		Code:     code,
-	}, map[types.Uint256]types.Uint256{
+	}, map[uint256.Int]uint256.Int{
 		types.U256Zero: types.U256From(1),
 	})
 
@@ -101,7 +102,7 @@ func TestSstoreRefundAfterSubcall(t *testing.T) {
 		Nonce:    0,
 		CodeHash: types.Keccak256(dispatcherCode),
 		Code:     dispatcherCode,
-	}, map[types.Uint256]types.Uint256{
+	}, map[uint256.Int]uint256.Int{
 		types.U256Zero: types.U256From(1),
 	})
 	db.InsertAccount(callee, state.AccountInfo{

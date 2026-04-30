@@ -17,7 +17,7 @@ func opMul(interp *Interpreter) {
 	s := interp.Stack
 	a := s.data[s.top]
 	top := &s.data[s.top-1]
-	*top = a.Mul(*top)
+	top.Mul(&a, top)
 }
 
 // opSub — BinaryOp body.
@@ -32,7 +32,7 @@ func opDiv(interp *Interpreter) {
 	a := s.data[s.top]
 	top := &s.data[s.top-1]
 	if !types.IsZeroPtr(top) {
-		*top = a.Div(*top)
+		top.Div(&a, top)
 	}
 }
 
@@ -50,7 +50,7 @@ func opMod(interp *Interpreter) {
 	a := s.data[s.top]
 	top := &s.data[s.top-1]
 	if !types.IsZeroPtr(top) {
-		*top = a.Mod(*top)
+		top.Mod(&a, top)
 	}
 }
 
@@ -68,7 +68,7 @@ func opAddmod(interp *Interpreter) {
 	a := s.data[s.top+1]
 	b := s.data[s.top]
 	top := &s.data[s.top-1]
-	*top = a.AddMod(b, *top)
+	top.AddMod(&a, &b, top)
 }
 
 // opMulmod — TernaryOp body. s.top already decremented by 2.
@@ -77,7 +77,7 @@ func opMulmod(interp *Interpreter) {
 	a := s.data[s.top+1]
 	b := s.data[s.top]
 	top := &s.data[s.top-1]
-	*top = a.MulMod(b, *top)
+	top.MulMod(&a, &b, top)
 }
 
 // opSignextend — BinaryOp body.
@@ -104,7 +104,7 @@ func opExp(interp *Interpreter) {
 		interp.HaltOOG()
 		return
 	}
-	*top = base.Exp(*top)
+	top.Exp(&base, top)
 }
 
 // opKeccak256 — Custom flush handler. Full body after gas flush.

@@ -7,27 +7,27 @@ import "fmt"
 type ForkID uint8
 
 const (
-	Frontier         ForkID = 0
+	Frontier        ForkID = 0
 	FrontierThawing ForkID = 1
-	Homestead        ForkID = 2
+	Homestead       ForkID = 2
 	DaoFork         ForkID = 3
-	Tangerine        ForkID = 4
+	Tangerine       ForkID = 4
 	SpuriousDragon  ForkID = 5
-	Byzantium        ForkID = 6
-	Constantinople   ForkID = 7
-	Petersburg       ForkID = 8
-	Istanbul         ForkID = 9
+	Byzantium       ForkID = 6
+	Constantinople  ForkID = 7
+	Petersburg      ForkID = 8
+	Istanbul        ForkID = 9
 	MuirGlacier     ForkID = 10
-	Berlin           ForkID = 11
-	London           ForkID = 12
+	Berlin          ForkID = 11
+	London          ForkID = 12
 	ArrowGlacier    ForkID = 13
 	GrayGlacier     ForkID = 14
-	Merge            ForkID = 15
-	Shanghai         ForkID = 16
-	Cancun           ForkID = 17
-	Prague           ForkID = 18
-	Osaka            ForkID = 19
-	Amsterdam        ForkID = 20
+	Merge           ForkID = 15
+	Shanghai        ForkID = 16
+	Cancun          ForkID = 17
+	Prague          ForkID = 18
+	Osaka           ForkID = 19
+	Amsterdam       ForkID = 20
 )
 
 // LatestForkID is the default spec (Osaka).

@@ -3,8 +3,8 @@ package vm
 import (
 	"testing"
 
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/spec"
+	"github.com/Giulio2002/gevm/types"
 )
 
 func TestInterpreterNew(t *testing.T) {

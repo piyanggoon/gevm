@@ -4,6 +4,7 @@ package spec
 
 import (
 	"fmt"
+	"github.com/holiman/uint256"
 
 	"github.com/Giulio2002/gevm/precompiles"
 	"github.com/Giulio2002/gevm/types"
@@ -14,19 +15,19 @@ type DecodedTx struct {
 	TxType               int // 0=legacy, 1=EIP-2930, 2=EIP-1559, 3=EIP-4844
 	ChainId              *uint64
 	Nonce                uint64
-	GasPrice             types.Uint256 // legacy/EIP-2930
-	MaxPriorityFeePerGas types.Uint256 // EIP-1559+
-	MaxFeePerGas         types.Uint256 // EIP-1559+
+	GasPrice             uint256.Int // legacy/EIP-2930
+	MaxPriorityFeePerGas uint256.Int // EIP-1559+
+	MaxFeePerGas         uint256.Int // EIP-1559+
 	GasLimit             uint64
 	To                   *types.Address // nil for CREATE
-	Value                types.Uint256
+	Value                uint256.Int
 	Data                 []byte
 	AccessList           []DecodedAccessListEntry // EIP-2930+
-	MaxFeePerBlobGas     types.Uint256          // EIP-4844
-	BlobHashes           []types.B256        // EIP-4844
-	V                    types.Uint256
-	R                    types.Uint256
-	S                    types.Uint256
+	MaxFeePerBlobGas     uint256.Int              // EIP-4844
+	BlobHashes           []types.B256             // EIP-4844
+	V                    uint256.Int
+	R                    uint256.Int
+	S                    uint256.Int
 }
 
 // DecodedAccessListEntry is one entry in a decoded access list.
@@ -164,7 +165,7 @@ func decodeLegacyTx(items []RlpItem) (*DecodedTx, error) {
 	// Derive chainId from V for EIP-155
 	// Legacy pre-EIP-155: V = 27 or 28
 	// EIP-155: V = 2*chainId + 35 + {0,1}
-	vU64 := tx.V.AsUsize()
+	vU64 := types.U256AsUsize(&tx.V)
 	if vU64 != 27 && vU64 != 28 {
 		// EIP-155
 		if vU64 >= 35 {
@@ -517,7 +518,7 @@ func SigningHash(tx *DecodedTx) types.B256 {
 // legacySigningHash computes the signing hash for legacy transactions.
 func legacySigningHash(tx *DecodedTx) types.B256 {
 	// Determine if EIP-155 from V
-	vU64 := tx.V.AsUsize()
+	vU64 := types.U256AsUsize(&tx.V)
 
 	var items [][]byte
 
@@ -649,7 +650,7 @@ func RecoverSender(tx *DecodedTx) (types.Address, error) {
 	switch tx.TxType {
 	case 0:
 		// Legacy: V=27/28 (pre-EIP-155) or V=2*chainId+35+{0,1} (EIP-155)
-		vU64 := tx.V.AsUsize()
+		vU64 := types.U256AsUsize(&tx.V)
 		if vU64 == 27 || vU64 == 28 {
 			recid = byte(vU64 - 27)
 		} else if vU64 >= 35 {
@@ -659,7 +660,7 @@ func RecoverSender(tx *DecodedTx) (types.Address, error) {
 		}
 	case 1, 2, 3:
 		// Typed txs: V is the yParity (0 or 1)
-		vU64 := tx.V.AsUsize()
+		vU64 := types.U256AsUsize(&tx.V)
 		if vU64 > 1 {
 			return types.AddressZero, fmt.Errorf("invalid yParity: %d", vU64)
 		}
@@ -669,8 +670,8 @@ func RecoverSender(tx *DecodedTx) (types.Address, error) {
 	}
 
 	// Build 64-byte signature [R(32) || S(32)]
-	rBytes := tx.R.ToBytes32()
-	sBytes := tx.S.ToBytes32()
+	rBytes := tx.R.Bytes32()
+	sBytes := tx.S.Bytes32()
 	var sig [64]byte
 	copy(sig[0:32], rBytes[:])
 	copy(sig[32:64], sBytes[:])

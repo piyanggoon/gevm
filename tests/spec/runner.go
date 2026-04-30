@@ -9,10 +9,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Giulio2002/gevm/host"
 	keccak "github.com/Giulio2002/fastkeccak"
-	"github.com/Giulio2002/gevm/types"
+	"github.com/Giulio2002/gevm/host"
 	gevmspec "github.com/Giulio2002/gevm/spec"
+	"github.com/Giulio2002/gevm/types"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
@@ -290,9 +290,9 @@ func BuildTransaction(unit *TestUnit, tc *TestCase, caller types.Address) (host.
 	tx := host.Transaction{
 		Caller:   caller,
 		Input:    unit.Transaction.Data[idx.Data].V,
-		GasLimit: unit.Transaction.GasLimit[idx.Gas].V.AsUsize(),
+		GasLimit: types.U256AsUsize(&unit.Transaction.GasLimit[idx.Gas].V),
 		Value:    unit.Transaction.Value[idx.Value].V,
-		Nonce:    unit.Transaction.Nonce.V.AsUsize(),
+		Nonce:    types.U256AsUsize(&unit.Transaction.Nonce.V),
 	}
 
 	// Determine transaction type
@@ -424,14 +424,14 @@ func parseAuthorizationList(raw json.RawMessage) []host.Authorization {
 	for i, e := range entries {
 		auths[i].ChainId = e.ChainId.V
 		auths[i].Address = e.Address.V
-		auths[i].Nonce = e.Nonce.V.AsUsize()
+		auths[i].Nonce = types.U256AsUsize(&e.Nonce.V)
 		copy(auths[i].R[:], e.R.V[:])
 		copy(auths[i].S[:], e.S.V[:])
 		// Prefer yParity over v
 		if e.YParity != nil {
-			auths[i].YParity = uint8(e.YParity.V.AsUsize())
+			auths[i].YParity = uint8(types.U256AsUsize(&e.YParity.V))
 		} else {
-			auths[i].YParity = uint8(e.V.V.AsUsize())
+			auths[i].YParity = uint8(types.U256AsUsize(&e.V.V))
 		}
 	}
 	return auths
@@ -462,7 +462,7 @@ func BuildBlockEnv(unit *TestUnit, forkID gevmspec.ForkID) host.BlockEnv {
 
 	// EIP-4844: compute blob gas price from excess blob gas
 	if env.CurrentExcessBlobGas != nil {
-		excessBlobGas := env.CurrentExcessBlobGas.V.AsUsize()
+		excessBlobGas := types.U256AsUsize(&env.CurrentExcessBlobGas.V)
 		blobGasPrice := gevmspec.CalcBlobGasPrice(excessBlobGas, forkID)
 		block.BlobGasPrice = types.U256From(blobGasPrice)
 	}

@@ -6,7 +6,7 @@ type TransactionTestSuite map[string]*TransactionTestCase
 
 // TransactionTestCase is a single transaction test case.
 type TransactionTestCase struct {
-	Result  map[string]*TxTestResult `json:"result"`  // fork → result
+	Result  map[string]*TxTestResult `json:"result"` // fork → result
 	TxBytes HexBytes                 `json:"txbytes"`
 }
 

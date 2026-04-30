@@ -2,6 +2,7 @@ package state
 
 import (
 	"github.com/Giulio2002/gevm/types"
+	"github.com/holiman/uint256"
 )
 
 // Database is the EVM database interface for accessing state.
@@ -14,7 +15,7 @@ type Database interface {
 	CodeByHash(codeHash types.B256) (types.Bytes, error)
 
 	// Storage gets storage value of address at index.
-	Storage(address types.Address, index types.Uint256) (types.Uint256, error)
+	Storage(address types.Address, index uint256.Int) (uint256.Int, error)
 
 	// HasStorage returns true if the account has any non-empty storage in the DB.
 	// Used by EIP-7610 create collision detection.

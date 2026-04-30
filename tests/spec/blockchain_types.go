@@ -3,9 +3,10 @@ package spec
 
 import (
 	"encoding/json"
+	"github.com/holiman/uint256"
 
-	"github.com/Giulio2002/gevm/types"
 	gevmspec "github.com/Giulio2002/gevm/spec"
+	"github.com/Giulio2002/gevm/types"
 )
 
 // BlockchainTestSuite is the top-level map: test name -> BlockchainTestCase.
@@ -155,7 +156,7 @@ func BlockchainForkToForkID(network string) (gevmspec.ForkID, bool) {
 }
 
 // BlockHeaderToBlockEnv creates a BlockEnv from a blockchain test block header.
-func BlockHeaderToBlockEnv(hdr *BlockHeader, forkID gevmspec.ForkID) types.Uint256 {
+func BlockHeaderToBlockEnv(hdr *BlockHeader, forkID gevmspec.ForkID) uint256.Int {
 	// This just returns the excess blob gas for the caller to compute blob gas price.
 	// The actual BlockEnv construction happens in the runner.
 	if hdr.ExcessBlobGas != nil {

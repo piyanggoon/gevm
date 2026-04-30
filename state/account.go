@@ -1,10 +1,11 @@
 package state
 
 import (
+	"github.com/holiman/uint256"
 	"sync"
 
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/spec"
+	"github.com/Giulio2002/gevm/types"
 )
 
 // AccountStatus is a bitflag tracking account state.
@@ -22,7 +23,7 @@ const (
 
 // AccountInfo holds balance, nonce, code hash, and optional code.
 type AccountInfo struct {
-	Balance  types.Uint256
+	Balance  uint256.Int
 	Nonce    uint64
 	CodeHash types.B256
 	Code     types.Bytes // nil means code not loaded yet
@@ -253,14 +254,14 @@ func (a *Account) Selfdestruct() {
 
 // EvmStorageSlot tracks the current value of a storage slot.
 type EvmStorageSlot struct {
-	OriginalValue types.Uint256
-	PresentValue  types.Uint256
+	OriginalValue uint256.Int
+	PresentValue  uint256.Int
 	TransactionID int
 	IsCold        bool
 }
 
 // NewEvmStorageSlot creates an unchanged slot for the given value.
-func NewEvmStorageSlot(original types.Uint256, transactionID int) *EvmStorageSlot {
+func NewEvmStorageSlot(original uint256.Int, transactionID int) *EvmStorageSlot {
 	return &EvmStorageSlot{
 		OriginalValue: original,
 		PresentValue:  original,
@@ -269,7 +270,7 @@ func NewEvmStorageSlot(original types.Uint256, transactionID int) *EvmStorageSlo
 }
 
 // NewEvmStorageSlotChanged creates a changed slot.
-func NewEvmStorageSlotChanged(original, present types.Uint256, transactionID int) *EvmStorageSlot {
+func NewEvmStorageSlotChanged(original, present uint256.Int, transactionID int) *EvmStorageSlot {
 	return &EvmStorageSlot{
 		OriginalValue: original,
 		PresentValue:  present,

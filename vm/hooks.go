@@ -3,7 +3,10 @@
 // single `if debug {` branch, predicted false by the CPU (~0.5-1%).
 package vm
 
-import "github.com/Giulio2002/gevm/types"
+import (
+	"github.com/Giulio2002/gevm/types"
+	"github.com/holiman/uint256"
+)
 
 // Hooks holds optional function pointers for tracing EVM execution.
 // nil fields are disabled. A cached `debug` boolean in the Run() loop
@@ -11,12 +14,12 @@ import "github.com/Giulio2002/gevm/types"
 type Hooks struct {
 	// Transaction lifecycle
 	OnTxStart func(gasLimit uint64, from, to types.Address,
-		value types.Uint256, input []byte, isCreate bool)
+		value uint256.Int, input []byte, isCreate bool)
 	OnTxEnd func(gasUsed uint64, output []byte, err error)
 
 	// Call/Create frame entry/exit
 	OnEnter func(depth int, opType byte, from, to types.Address,
-		input []byte, gas uint64, value types.Uint256)
+		input []byte, gas uint64, value uint256.Int)
 	OnExit func(depth int, output []byte, gasUsed uint64,
 		err error, reverted bool)
 
@@ -30,10 +33,10 @@ type Hooks struct {
 // OpContext exposes interpreter state to tracers without copying.
 type OpContext interface {
 	MemoryData() []byte
-	StackData() []types.Uint256
+	StackData() []uint256.Int
 	StackLen() int
 	CallerAddr() types.Address
 	ContractAddr() types.Address
-	CallValue() types.Uint256
+	CallValue() uint256.Int
 	CallInput() []byte
 }
