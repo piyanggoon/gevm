@@ -363,6 +363,12 @@ type Host interface {
 	// Returns code, code hash, cold flag, and empty flag in one call.
 	LoadAccountCode(addr types.Address) AccountCodeLoad
 
+	// IsPrecompile returns true if addr is a registered precompile for the active fork.
+	IsPrecompile(addr types.Address) bool
+
+	// RunPrecompile executes a precompile if addr is registered for the active fork.
+	RunPrecompile(addr types.Address, input types.Bytes, gasLimit uint64) (PrecompileCallResult, bool)
+
 	// Storage access
 	// SLoadInto reads a storage value. Key is read by pointer to avoid 32B interface copy.
 	// out receives the loaded value (key and out may alias the same stack slot).
@@ -382,6 +388,14 @@ type Host interface {
 
 	// Self destruct
 	SelfDestruct(addr types.Address, target types.Address) SelfDestructResult
+}
+
+// PrecompileCallResult is a fork-aware precompile execution result exposed by Host.
+type PrecompileCallResult struct {
+	Result    InstructionResult
+	Output    types.Bytes
+	GasUsed   uint64
+	GasRefund int64
 }
 
 // AccountCodeLoad holds the result of loading an account for CALL instructions.

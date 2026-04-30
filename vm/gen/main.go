@@ -19,6 +19,7 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -732,13 +733,14 @@ func (e *emitter) emitHeader() {
 }
 
 func main() {
-	// Determine paths relative to this generator
-	genDir, err := os.Getwd()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "cannot get working directory: %v\n", err)
+	// Determine paths relative to this source file so `go generate ./vm`
+	// works regardless of the current working directory.
+	_, sourceFile, _, ok := runtime.Caller(0)
+	if !ok {
+		fmt.Fprintln(os.Stderr, "cannot resolve generator source path")
 		os.Exit(1)
 	}
-	// The generator is in internal/vm/gen/, parent is internal/vm/
+	genDir := filepath.Dir(sourceFile)
 	vmDir := filepath.Dir(genDir)
 
 	// Parse function bodies from inst_*.go files

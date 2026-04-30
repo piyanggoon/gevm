@@ -142,7 +142,12 @@ func (m *Memory) SetWord(offset int, value types.B256) {
 
 // SetU256 sets a uint256.Int at the given offset (big-endian).
 func (m *Memory) SetU256(offset int, value uint256.Int) {
-	value.WriteToSlice((*m.buffer)[m.checkpoint+offset:])
+	p := m.checkpoint + offset
+	b := (*m.buffer)[p : p+32 : p+32]
+	binary.BigEndian.PutUint64(b[0:], value[3])
+	binary.BigEndian.PutUint64(b[8:], value[2])
+	binary.BigEndian.PutUint64(b[16:], value[1])
+	binary.BigEndian.PutUint64(b[24:], value[0])
 }
 
 // Set copies data into memory at the given offset.

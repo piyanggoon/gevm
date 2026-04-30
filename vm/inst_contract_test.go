@@ -107,6 +107,12 @@ func (h *mockHost) LoadAccountCode(addr types.Address) AccountCodeLoad {
 	}
 }
 
+func (h *mockHost) RunPrecompile(addr types.Address, input types.Bytes, gasLimit uint64) (PrecompileCallResult, bool) {
+	return PrecompileCallResult{}, false
+}
+
+func (h *mockHost) IsPrecompile(addr types.Address) bool { return false }
+
 func addr(b byte) types.Address {
 	var a types.Address
 	a[19] = b

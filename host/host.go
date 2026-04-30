@@ -3,6 +3,7 @@
 package host
 
 import (
+	"github.com/Giulio2002/gevm/precompiles"
 	"github.com/Giulio2002/gevm/state"
 	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/vm"
@@ -43,6 +44,9 @@ type EvmHost struct {
 	Tx      TxEnv
 	Cfg     *CfgEnv
 	Journal *state.Journal
+
+	Precompiles               *precompiles.PrecompileSet
+	DisablePrecompileFastPath bool
 }
 
 // NewEvmHost creates a new EvmHost.
@@ -167,6 +171,61 @@ func (h *EvmHost) LoadAccountCode(addr types.Address) vm.AccountCodeLoad {
 		IsCold:   result.IsCold,
 		IsEmpty:  isEmpty,
 	}
+}
+
+// IsPrecompile returns true if addr is a precompile for the active fork.
+func (h *EvmHost) IsPrecompile(addr types.Address) bool {
+	return !h.DisablePrecompileFastPath && h.Precompiles != nil && h.Precompiles.Get(addr) != nil
+}
+
+// RunPrecompile executes addr if it is a precompile for the active fork.
+func (h *EvmHost) RunPrecompile(addr types.Address, input types.Bytes, gasLimit uint64) (vm.PrecompileCallResult, bool) {
+	if h.Precompiles == nil {
+		return vm.PrecompileCallResult{}, false
+	}
+	precompile := h.Precompiles.Get(addr)
+	if precompile == nil {
+		return vm.PrecompileCallResult{}, false
+	}
+	if len(input) == 0 && isIdentityPrecompileAddress(addr) {
+		if gasLimit < 15 {
+			return vm.PrecompileCallResult{Result: vm.InstructionResultPrecompileOOG}, true
+		}
+		return vm.PrecompileCallResult{
+			Result:  vm.InstructionResultReturn,
+			GasUsed: 15,
+		}, true
+	}
+
+	execResult := precompile.Execute(input, gasLimit)
+	if execResult.IsErr() {
+		resultCode := vm.InstructionResultPrecompileError
+		if *execResult.Err == precompiles.PrecompileErrorOutOfGas {
+			resultCode = vm.InstructionResultPrecompileOOG
+		}
+		return vm.PrecompileCallResult{Result: resultCode}, true
+	}
+
+	output := execResult.Output
+	resultCode := vm.InstructionResultReturn
+	if output.Reverted {
+		resultCode = vm.InstructionResultRevert
+	}
+	return vm.PrecompileCallResult{
+		Result:    resultCode,
+		Output:    output.Bytes,
+		GasUsed:   output.GasUsed,
+		GasRefund: output.GasRefund,
+	}, true
+}
+
+func isIdentityPrecompileAddress(addr types.Address) bool {
+	for i := 0; i < len(addr)-1; i++ {
+		if addr[i] != 0 {
+			return false
+		}
+	}
+	return addr[19] == 0x04
 }
 
 func (h *EvmHost) SelfBalance(addr types.Address) uint256.Int {

@@ -410,9 +410,12 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 	if runner == nil {
 		runner = vm.DefaultRunner{}
 	}
+	precompileSet := precompiles.ForSpec(evm.ForkID)
+	evm.host.Precompiles = precompileSet
+	evm.host.DisablePrecompileFastPath = false
 	handler := Handler{
 		Host:           &evm.host,
-		Precompiles:    precompiles.ForSpec(evm.ForkID),
+		Precompiles:    precompileSet,
 		RootMemory:     rootMemory,
 		ReturnAlloc:    &evm.ReturnAlloc,
 		JumpTableCache: evm.JumpTableCache,
@@ -423,6 +426,9 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 	// Extract lifecycle hooks from TracingRunner
 	if tr, ok := runner.(*vm.TracingRunner); ok {
 		handler.hooks = tr.Hooks
+		if tr.Hooks != nil && (tr.Hooks.OnEnter != nil || tr.Hooks.OnExit != nil) {
+			evm.host.DisablePrecompileFastPath = true
+		}
 	}
 
 	// Warm precompile addresses via shared map pointer (no Account objects created).
