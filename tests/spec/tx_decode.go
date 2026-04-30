@@ -165,8 +165,8 @@ func decodeLegacyTx(items []RlpItem) (*DecodedTx, error) {
 	// Derive chainId from V for EIP-155
 	// Legacy pre-EIP-155: V = 27 or 28
 	// EIP-155: V = 2*chainId + 35 + {0,1}
-	vU64 := tx.V.Uint64()
-	if vU64 != 27 && vU64 != 28 {
+	vU64, overflow := tx.V.Uint64WithOverflow()
+	if !overflow && vU64 != 27 && vU64 != 28 {
 		// EIP-155
 		if vU64 >= 35 {
 			chainId := (vU64 - 35) / 2
@@ -518,7 +518,7 @@ func SigningHash(tx *DecodedTx) types.B256 {
 // legacySigningHash computes the signing hash for legacy transactions.
 func legacySigningHash(tx *DecodedTx) types.B256 {
 	// Determine if EIP-155 from V
-	vU64 := tx.V.Uint64()
+	vU64, overflow := tx.V.Uint64WithOverflow()
 
 	var items [][]byte
 
@@ -529,7 +529,7 @@ func legacySigningHash(tx *DecodedTx) types.B256 {
 	items = append(items, RlpEncodeU256(tx.Value))
 	items = append(items, RlpEncodeBytes(tx.Data))
 
-	if vU64 != 27 && vU64 != 28 {
+	if overflow || (vU64 != 27 && vU64 != 28) {
 		// EIP-155: append [chainId, 0, 0]
 		if tx.ChainId != nil {
 			items = append(items, RlpEncodeUint64(*tx.ChainId))
@@ -643,14 +643,15 @@ func encodeAccessListRLP(al []DecodedAccessListEntry) []byte {
 
 // RecoverSender recovers the sender address from a decoded transaction.
 func RecoverSender(tx *DecodedTx) (types.Address, error) {
-	sigHash := SigningHash(tx)
-
 	// Extract recid from V
 	var recid byte
 	switch tx.TxType {
 	case 0:
 		// Legacy: V=27/28 (pre-EIP-155) or V=2*chainId+35+{0,1} (EIP-155)
-		vU64 := tx.V.Uint64()
+		vU64, overflow := tx.V.Uint64WithOverflow()
+		if overflow {
+			return types.AddressZero, fmt.Errorf("legacy V overflow")
+		}
 		if vU64 == 27 || vU64 == 28 {
 			recid = byte(vU64 - 27)
 		} else if vU64 >= 35 {
@@ -660,14 +661,16 @@ func RecoverSender(tx *DecodedTx) (types.Address, error) {
 		}
 	case 1, 2, 3:
 		// Typed txs: V is the yParity (0 or 1)
-		vU64 := tx.V.Uint64()
-		if vU64 > 1 {
+		vU64, overflow := tx.V.Uint64WithOverflow()
+		if overflow || vU64 > 1 {
 			return types.AddressZero, fmt.Errorf("invalid yParity: %d", vU64)
 		}
 		recid = byte(vU64)
 	default:
 		return types.AddressZero, fmt.Errorf("unsupported tx type for recovery: %d", tx.TxType)
 	}
+
+	sigHash := SigningHash(tx)
 
 	// Build 64-byte signature [R(32) || S(32)]
 	rBytes := tx.R.Bytes32()

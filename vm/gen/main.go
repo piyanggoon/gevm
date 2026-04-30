@@ -710,8 +710,8 @@ func (e *emitter) emitHeader() {
 	e.p("package vm\n\n")
 	e.p("import (\n")
 	e.p("\t\"github.com/Giulio2002/gevm/opcode\"\n")
-	e.p("\t\"github.com/Giulio2002/gevm/types\"\n")
 	e.p("\t\"github.com/Giulio2002/gevm/spec\"\n")
+	e.p("\t\"github.com/holiman/uint256\"\n")
 	e.p(")\n\n")
 	// Silence unused import warnings for cases where inline bodies use keccak
 	e.p("// Ensure imports are used.\n")

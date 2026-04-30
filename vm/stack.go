@@ -82,20 +82,6 @@ func (s *Stack) TopUnsafe() *uint256.Int {
 	return &s.data[s.top-1]
 }
 
-// Popn pops N values from the stack and returns them.
-// Values are returned in pop order: [0] = top, [1] = second, etc.
-// Returns nil if there are fewer than N items.
-func (s *Stack) Popn(n int) []uint256.Int {
-	if s.top < n {
-		return nil
-	}
-	result := make([]uint256.Int, n)
-	for i := 0; i < n; i++ {
-		result[i] = s.PopUnsafe()
-	}
-	return result
-}
-
 // Pop1 pops 1 value from the stack. Returns false if underflow.
 func (s *Stack) Pop1() (uint256.Int, bool) {
 	if s.top < 1 {
@@ -123,19 +109,6 @@ func (s *Stack) Pop3() (uint256.Int, uint256.Int, uint256.Int, bool) {
 	b := s.PopUnsafe()
 	c := s.PopUnsafe()
 	return a, b, c, true
-}
-
-// PopnTop pops N values and returns a pointer to the new top.
-// Returns nil if there are fewer than N+1 items.
-func (s *Stack) PopnTop(n int) ([]uint256.Int, *uint256.Int) {
-	if s.top < n+1 {
-		return nil, nil
-	}
-	result := make([]uint256.Int, n)
-	for i := 0; i < n; i++ {
-		result[i] = s.PopUnsafe()
-	}
-	return result, s.TopUnsafe()
 }
 
 // Pop1Top pops 1 value and returns a pointer to the new top.

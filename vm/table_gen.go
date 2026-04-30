@@ -471,7 +471,7 @@ func (DefaultRunner) Run(interp *Interpreter, host Host) {
 				top := &s.data[s.top-1]
 				idx, overflow := a.Uint64WithOverflow()
 				if !overflow && idx < 32 {
-					index := *uint256.NewInt(idx)
+					index := uint256.Int{idx, 0, 0, 0}
 					top.Byte(&index)
 				} else {
 					*top = uint256.Int{}
@@ -605,7 +605,7 @@ func (DefaultRunner) Run(interp *Interpreter, host Host) {
 				} else {
 
 					top := &s.data[s.top-1]
-					*top = *uint256.NewInt(uint64(256 - top.BitLen()))
+					*top = uint256.Int{uint64(256 - top.BitLen()), 0, 0, 0}
 
 				}
 			}
@@ -740,7 +740,7 @@ func (DefaultRunner) Run(interp *Interpreter, host Host) {
 				interp.HaltOverflow()
 			} else {
 
-				s.data[s.top] = *uint256.NewInt(uint64(len(interp.Input.Input)))
+				s.data[s.top] = uint256.Int{uint64(len(interp.Input.Input)), 0, 0, 0}
 				s.top++
 
 			}
@@ -766,7 +766,7 @@ func (DefaultRunner) Run(interp *Interpreter, host Host) {
 				interp.HaltOverflow()
 			} else {
 
-				s.data[s.top] = *uint256.NewInt(uint64(bc.originalLen))
+				s.data[s.top] = uint256.Int{uint64(bc.originalLen), 0, 0, 0}
 				s.top++
 
 			}
@@ -836,7 +836,7 @@ func (DefaultRunner) Run(interp *Interpreter, host Host) {
 					interp.HaltOverflow()
 				} else {
 
-					s.data[s.top] = *uint256.NewInt(uint64(len(interp.ReturnData)))
+					s.data[s.top] = uint256.Int{uint64(len(interp.ReturnData)), 0, 0, 0}
 					s.top++
 
 				}
@@ -1277,7 +1277,7 @@ func (DefaultRunner) Run(interp *Interpreter, host Host) {
 				interp.HaltOverflow()
 			} else {
 
-				s.data[s.top] = *uint256.NewInt(uint64(bc.pc - 1))
+				s.data[s.top] = uint256.Int{uint64(bc.pc - 1), 0, 0, 0}
 				s.top++
 
 			}
@@ -1294,7 +1294,7 @@ func (DefaultRunner) Run(interp *Interpreter, host Host) {
 				interp.HaltOverflow()
 			} else {
 
-				s.data[s.top] = *uint256.NewInt(uint64(interp.Memory.Len()))
+				s.data[s.top] = uint256.Int{uint64(interp.Memory.Len()), 0, 0, 0}
 				s.top++
 
 			}
@@ -2624,7 +2624,7 @@ func (r *TracingRunner) Run(interp *Interpreter, host Host) {
 				top := &s.data[s.top-1]
 				idx, overflow := a.Uint64WithOverflow()
 				if !overflow && idx < 32 {
-					index := *uint256.NewInt(idx)
+					index := uint256.Int{idx, 0, 0, 0}
 					top.Byte(&index)
 				} else {
 					*top = uint256.Int{}
@@ -2726,7 +2726,7 @@ func (r *TracingRunner) Run(interp *Interpreter, host Host) {
 				} else {
 
 					top := &s.data[s.top-1]
-					*top = *uint256.NewInt(uint64(256 - top.BitLen()))
+					*top = uint256.Int{uint64(256 - top.BitLen()), 0, 0, 0}
 
 				}
 			}
@@ -2845,7 +2845,7 @@ func (r *TracingRunner) Run(interp *Interpreter, host Host) {
 				interp.HaltOverflow()
 			} else {
 
-				s.data[s.top] = *uint256.NewInt(uint64(len(interp.Input.Input)))
+				s.data[s.top] = uint256.Int{uint64(len(interp.Input.Input)), 0, 0, 0}
 				s.top++
 
 			}
@@ -2867,7 +2867,7 @@ func (r *TracingRunner) Run(interp *Interpreter, host Host) {
 				interp.HaltOverflow()
 			} else {
 
-				s.data[s.top] = *uint256.NewInt(uint64(bc.originalLen))
+				s.data[s.top] = uint256.Int{uint64(bc.originalLen), 0, 0, 0}
 				s.top++
 
 			}
@@ -2921,7 +2921,7 @@ func (r *TracingRunner) Run(interp *Interpreter, host Host) {
 					interp.HaltOverflow()
 				} else {
 
-					s.data[s.top] = *uint256.NewInt(uint64(len(interp.ReturnData)))
+					s.data[s.top] = uint256.Int{uint64(len(interp.ReturnData)), 0, 0, 0}
 					s.top++
 
 				}
@@ -3282,7 +3282,7 @@ func (r *TracingRunner) Run(interp *Interpreter, host Host) {
 				interp.HaltOverflow()
 			} else {
 
-				s.data[s.top] = *uint256.NewInt(uint64(bc.pc - 1))
+				s.data[s.top] = uint256.Int{uint64(bc.pc - 1), 0, 0, 0}
 				s.top++
 
 			}
@@ -3297,7 +3297,7 @@ func (r *TracingRunner) Run(interp *Interpreter, host Host) {
 				interp.HaltOverflow()
 			} else {
 
-				s.data[s.top] = *uint256.NewInt(uint64(interp.Memory.Len()))
+				s.data[s.top] = uint256.Int{uint64(interp.Memory.Len()), 0, 0, 0}
 				s.top++
 
 			}

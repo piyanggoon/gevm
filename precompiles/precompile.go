@@ -2,8 +2,10 @@
 package precompiles
 
 import (
-	"github.com/Giulio2002/gevm/types"
+	"encoding/binary"
+
 	"github.com/Giulio2002/gevm/spec"
+	"github.com/Giulio2002/gevm/types"
 )
 
 // PrecompileOutput holds the result of a successful precompile execution.
@@ -158,10 +160,9 @@ func (ps *PrecompileSet) cacheWarmAddresses() {
 // shortIndex returns the single-byte index of a short address, or -1 if not short.
 func shortIndex(addr types.Address) int {
 	// Short precompile addresses are 0x00..01 through 0x00..11 (last byte only, rest zero).
-	for i := 0; i < 19; i++ {
-		if addr[i] != 0 {
-			return -1
-		}
+	if binary.BigEndian.Uint64(addr[0:8])|binary.BigEndian.Uint64(addr[8:16]) != 0 ||
+		addr[16]|addr[17]|addr[18] != 0 {
+		return -1
 	}
 	return int(addr[19])
 }

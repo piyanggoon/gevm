@@ -261,15 +261,18 @@ func validateTxForFork(tx *DecodedTx, forkID gevmspec.ForkID) error {
 
 	// V validation for typed transactions (must be 0 or 1)
 	if tx.TxType > 0 {
-		vU64 := tx.V.Uint64()
-		if vU64 > 1 {
+		vU64, overflow := tx.V.Uint64WithOverflow()
+		if overflow || vU64 > 1 {
 			return fmt.Errorf("invalid yParity: %d", vU64)
 		}
 	}
 
 	// V validation for legacy transactions
 	if tx.TxType == 0 {
-		vU64 := tx.V.Uint64()
+		vU64, overflow := tx.V.Uint64WithOverflow()
+		if overflow {
+			return fmt.Errorf("legacy V overflow")
+		}
 		if vU64 != 27 && vU64 != 28 {
 			// EIP-155: V = 2*chainId + 35 + {0,1}
 			if vU64 < 35 {

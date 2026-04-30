@@ -80,7 +80,7 @@ func opCalldataload(interp *Interpreter) {
 // opCalldatasize — PushVal body.
 func opCalldatasize(interp *Interpreter) {
 	s := interp.Stack
-	s.data[s.top] = *uint256.NewInt(uint64(len(interp.Input.Input)))
+	s.data[s.top] = uint256.Int{uint64(len(interp.Input.Input)), 0, 0, 0}
 	s.top++
 }
 
@@ -128,7 +128,7 @@ func opCalldatacopy(interp *Interpreter) {
 // opCodesize — PushVal body.
 func opCodesize(interp *Interpreter) {
 	s := interp.Stack
-	s.data[s.top] = *uint256.NewInt(uint64(interp.Bytecode.originalLen))
+	s.data[s.top] = uint256.Int{uint64(interp.Bytecode.originalLen), 0, 0, 0}
 	s.top++
 }
 
@@ -197,7 +197,7 @@ func opExtcodesize(interp *Interpreter, host Host) {
 			return
 		}
 	}
-	*top = *uint256.NewInt(uint64(size))
+	*top = uint256.Int{uint64(size), 0, 0, 0}
 }
 
 // opExtcodecopy — Custom flush handler (needs Host).
@@ -254,7 +254,7 @@ func opExtcodecopy(interp *Interpreter, host Host) {
 // opReturndatasize — PushVal body.
 func opReturndatasize(interp *Interpreter) {
 	s := interp.Stack
-	s.data[s.top] = *uint256.NewInt(uint64(len(interp.ReturnData)))
+	s.data[s.top] = uint256.Int{uint64(len(interp.ReturnData)), 0, 0, 0}
 	s.top++
 }
 

@@ -528,7 +528,7 @@ func (h *Handler) handleCallReturn(interp *vm.Interpreter, outcome vm.CallOutcom
 
 	// Push success (1) or failure (0) to parent stack
 	if result.Result.IsOk() {
-		interp.Stack.Push(*uint256.NewInt(1))
+		interp.Stack.Push(uint256.Int{1, 0, 0, 0})
 	} else {
 		interp.Stack.Push(uint256.Int{})
 	}

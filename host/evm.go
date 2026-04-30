@@ -341,7 +341,7 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 	default:
 		maxGasPrice = tx.GasPrice
 	}
-	gasLimitU := *uint256.NewInt(tx.GasLimit)
+	gasLimitU := uint256.Int{tx.GasLimit, 0, 0, 0}
 	var maxFee uint256.Int
 	maxFee.Mul(&maxGasPrice, &gasLimitU)
 	// Check for overflow: if gasPrice * gasLimit < gasPrice (and gasLimit > 0), overflow occurred
@@ -350,7 +350,7 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 	}
 	// EIP-4844: include max blob gas cost in balance check
 	if tx.TxType == TxTypeEIP4844 && len(tx.BlobHashes) > 0 {
-		totalBlobGas := *uint256.NewInt(uint64(len(tx.BlobHashes)) * 131072)
+		totalBlobGas := uint256.Int{uint64(len(tx.BlobHashes)) * 131072, 0, 0, 0}
 		var maxBlobCost uint256.Int
 		maxBlobCost.Mul(&tx.MaxFeePerBlobGas, &totalBlobGas)
 		maxFee.Add(&maxFee, &maxBlobCost)
@@ -377,7 +377,7 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 	// EIP-4844: deduct blob gas cost
 	var blobGasCost uint256.Int
 	if tx.TxType == TxTypeEIP4844 && len(tx.BlobHashes) > 0 {
-		totalBlobGas := *uint256.NewInt(uint64(len(tx.BlobHashes)) * 131072) // GAS_PER_BLOB = 2^17
+		totalBlobGas := uint256.Int{uint64(len(tx.BlobHashes)) * 131072, 0, 0, 0} // GAS_PER_BLOB = 2^17
 		blobGasCost.Mul(&evm.Block.BlobGasPrice, &totalBlobGas)
 		gasDeduction.Add(&gasDeduction, &blobGasCost)
 	}
@@ -532,7 +532,7 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 	if gas.Refunded() > 0 {
 		reimburseGas += uint64(gas.Refunded())
 	}
-	reimburseGasU := *uint256.NewInt(reimburseGas)
+	reimburseGasU := uint256.Int{reimburseGas, 0, 0, 0}
 	var refundAmount uint256.Int
 	refundAmount.Mul(&effectiveGasPrice, &reimburseGasU)
 	callerReload, _ := evm.Journal.LoadAccount(tx.Caller)
@@ -695,7 +695,7 @@ func (evm *Evm) rewardBeneficiary(gasPrice uint256.Int, gasUsed uint64) {
 		effectivePrice = gasPrice
 	}
 
-	gasUsedU := *uint256.NewInt(gasUsed)
+	gasUsedU := uint256.Int{gasUsed, 0, 0, 0}
 	var reward uint256.Int
 	reward.Mul(&effectivePrice, &gasUsedU)
 

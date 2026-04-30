@@ -114,11 +114,9 @@ func opByte(interp *Interpreter) {
 	a := s.data[s.top]
 	top := &s.data[s.top-1]
 	idx, overflow := a.Uint64WithOverflow()
-	if idx < 32 {
-		index := *uint256.NewInt(idx)
+	if !overflow && idx < 32 {
+		index := uint256.Int{idx, 0, 0, 0}
 		top.Byte(&index)
-	} else if overflow {
-		*top = uint256.Int{}
 	} else {
 		*top = uint256.Int{}
 	}
@@ -169,5 +167,5 @@ func opSar(interp *Interpreter) {
 func opClz(interp *Interpreter) {
 	s := interp.Stack
 	top := &s.data[s.top-1]
-	*top = *uint256.NewInt(uint64(256 - top.BitLen()))
+	*top = uint256.Int{uint64(256 - top.BitLen()), 0, 0, 0}
 }

@@ -67,14 +67,14 @@ func opJumpi(interp *Interpreter) {
 // opPc — PushVal body. Pushes current PC (before this instruction).
 func opPc(interp *Interpreter) {
 	s := interp.Stack
-	s.data[s.top] = *uint256.NewInt(uint64(interp.Bytecode.pc - 1))
+	s.data[s.top] = uint256.Int{uint64(interp.Bytecode.pc - 1), 0, 0, 0}
 	s.top++
 }
 
 // opMsize — PushVal body. Pushes current memory size.
 func opMsize(interp *Interpreter) {
 	s := interp.Stack
-	s.data[s.top] = *uint256.NewInt(uint64(interp.Memory.Len()))
+	s.data[s.top] = uint256.Int{uint64(interp.Memory.Len()), 0, 0, 0}
 	s.top++
 }
 
@@ -85,7 +85,7 @@ func opGas(interp *Interpreter) {
 		interp.HaltOverflow()
 		return
 	}
-	s.data[s.top] = *uint256.NewInt(interp.Gas.remaining)
+	s.data[s.top] = uint256.Int{interp.Gas.remaining, 0, 0, 0}
 	s.top++
 }
 
