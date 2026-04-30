@@ -4,9 +4,9 @@ import (
 	"testing"
 
 	"github.com/Giulio2002/gevm/opcode"
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/spec"
 	"github.com/Giulio2002/gevm/state"
+	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/vm"
 )
 
@@ -585,6 +585,48 @@ func TestTransactBerlinDoesNotWarmCoinbase(t *testing.T) {
 	// In Berlin (pre-Shanghai), coinbase is warmed by rewardBeneficiary's LoadAccount,
 	// but NOT during pre-execution. Since rewardBeneficiary already loads it, it will
 	// be warm after Transact returns. This test just verifies Transact completes.
+}
+
+func TestWarmDelegatedDestination(t *testing.T) {
+	db := newMockDB()
+	target := addr(0x20)
+	delegate := addr(0x63)
+	code := append([]byte{0xef, 0x01, 0x00}, delegate[:]...)
+	db.accounts[target] = &state.AccountInfo{
+		CodeHash: types.Keccak256(code),
+		Code:     code,
+	}
+	db.accounts[delegate] = &state.AccountInfo{
+		CodeHash: types.KeccakEmpty,
+	}
+	evm := makeEvm(db, spec.Prague, BlockEnv{})
+	evm.Journal.WarmAddresses.AddAddress(target)
+
+	evm.warmDelegatedDesignation(target)
+
+	result, err := evm.Journal.LoadAccount(delegate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.IsCold {
+		t.Fatal("destination delegated designation should be warm")
+	}
+}
+
+func TestEIP7702AccessWarmupSkipsInvalidChainIDAndNonce(t *testing.T) {
+	auth := Authorization{
+		ChainId: u(2),
+		Nonce:   0,
+	}
+	if _, ok := recoverEIP7702AuthorityForAccess(&auth, u(1)); ok {
+		t.Fatal("authorization with mismatched chain ID should not warm an authority")
+	}
+
+	auth.ChainId = u(1)
+	auth.Nonce = ^uint64(0)
+	if _, ok := recoverEIP7702AuthorityForAccess(&auth, u(1)); ok {
+		t.Fatal("authorization with max nonce should not warm an authority")
+	}
 }
 
 // --- Edge cases ---

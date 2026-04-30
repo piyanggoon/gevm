@@ -2,24 +2,18 @@ package vm
 
 // decodeSingle decodes a single immediate byte for DUPN/SWAPN.
 func decodeSingle(x int) (int, bool) {
-	if x <= 90 {
-		return x + 17, true
-	} else if x >= 128 {
-		return x - 20, true
+	if x > 90 && x < 128 {
+		return 0, false
 	}
-	return 0, false
+	return (x + 145) % 256, true
 }
 
 // decodePair decodes a pair of indices from a single immediate byte for EXCHANGE.
 func decodePair(x int) (int, int, bool) {
-	var k int
-	if x <= 79 {
-		k = x
-	} else if x >= 128 {
-		k = x - 48
-	} else {
+	if x > 81 && x < 128 {
 		return 0, 0, false
 	}
+	k := x ^ 143
 	q := k / 16
 	r := k % 16
 	if q < r {

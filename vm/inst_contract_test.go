@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/Giulio2002/gevm/opcode"
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/spec"
+	"github.com/Giulio2002/gevm/types"
 )
 
 // mockHost implements vm.Host for testing contract instructions.
@@ -29,21 +29,22 @@ func newMockHost() *mockHost {
 	}
 }
 
-func (h *mockHost) Beneficiary() types.Address                                              { return types.Address{} }
-func (h *mockHost) Timestamp() types.Uint256                                                   { return types.U256Zero }
-func (h *mockHost) BlockNumber() types.Uint256                                                 { return types.U256Zero }
-func (h *mockHost) Difficulty() types.Uint256                                                  { return types.U256Zero }
-func (h *mockHost) Prevrandao() *types.Uint256                                                 { return nil }
-func (h *mockHost) GasLimit() types.Uint256                                                    { return types.U256Zero }
-func (h *mockHost) ChainId() types.Uint256                                                     { return types.U256Zero }
-func (h *mockHost) BaseFee() types.Uint256                                                     { return types.U256Zero }
-func (h *mockHost) BlobGasPrice() types.Uint256                                                { return types.U256Zero }
-func (h *mockHost) SlotNum() types.Uint256                                                     { return types.U256Zero }
-func (h *mockHost) Caller() types.Address                                                   { return types.Address{} }
-func (h *mockHost) EffectiveGasPrice() types.Uint256                                           { return types.U256Zero }
-func (h *mockHost) BlobHash(index int) *types.Uint256                                          { return nil }
-func (h *mockHost) SelfBalance(types.Address) types.Uint256                               { return types.U256Zero }
-func (h *mockHost) BlockHash(number types.Uint256) types.B256                             { return types.B256Zero }
+func (h *mockHost) Beneficiary() types.Address                { return types.Address{} }
+func (h *mockHost) Timestamp() types.Uint256                  { return types.U256Zero }
+func (h *mockHost) BlockNumber() types.Uint256                { return types.U256Zero }
+func (h *mockHost) Difficulty() types.Uint256                 { return types.U256Zero }
+func (h *mockHost) Prevrandao() *types.Uint256                { return nil }
+func (h *mockHost) GasLimit() types.Uint256                   { return types.U256Zero }
+func (h *mockHost) ChainId() types.Uint256                    { return types.U256Zero }
+func (h *mockHost) BaseFee() types.Uint256                    { return types.U256Zero }
+func (h *mockHost) BlobGasPrice() types.Uint256               { return types.U256Zero }
+func (h *mockHost) SlotNum() types.Uint256                    { return types.U256Zero }
+func (h *mockHost) CostPerStateByte() uint64                  { return 0 }
+func (h *mockHost) Caller() types.Address                     { return types.Address{} }
+func (h *mockHost) EffectiveGasPrice() types.Uint256          { return types.U256Zero }
+func (h *mockHost) BlobHash(index int) *types.Uint256         { return nil }
+func (h *mockHost) SelfBalance(types.Address) types.Uint256   { return types.U256Zero }
+func (h *mockHost) BlockHash(number types.Uint256) types.B256 { return types.B256Zero }
 func (h *mockHost) Log(addr types.Address, topics *[4]types.B256, numTopics int, data types.Bytes) {
 }
 func (h *mockHost) SelfDestruct(addr, target types.Address) SelfDestructResult {
@@ -497,6 +498,63 @@ func TestCallStaticWithValue(t *testing.T) {
 
 	if interp.HaltResult != InstructionResultCallNotAllowedInsideStatic {
 		t.Fatalf("expected CallNotAllowedInsideStatic, got %v", interp.HaltResult)
+	}
+}
+
+func TestCallNewAccountCostPreSpuriousNoValue(t *testing.T) {
+	tests := []struct {
+		name       string
+		forkID     spec.ForkID
+		wantSpent  uint64
+		createCall bool
+	}{
+		{
+			name:       "frontier_call_empty_no_value",
+			forkID:     spec.Frontier,
+			wantSpent:  spec.GasNewaccount,
+			createCall: true,
+		},
+		{
+			name:       "homestead_call_empty_no_value",
+			forkID:     spec.Homestead,
+			wantSpent:  spec.GasNewaccount,
+			createCall: true,
+		},
+		{
+			name:       "spurious_call_empty_no_value",
+			forkID:     spec.SpuriousDragon,
+			wantSpent:  0,
+			createCall: true,
+		},
+		{
+			name:       "homestead_callcode_empty_no_value",
+			forkID:     spec.Homestead,
+			wantSpent:  0,
+			createCall: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			host := newMockHost()
+			host.accounts[addr(0x03)] = mockAccount{isEmpty: true}
+			interp := NewInterpreter(
+				NewMemory(),
+				NewBytecode(nil),
+				Inputs{},
+				false,
+				tt.forkID,
+				1_000_000,
+			)
+
+			if _, ok := loadAccountAndCalcGas(interp, host, addr(0x03), types.U256Zero, false, tt.createCall, 0); !ok {
+				t.Fatal("loadAccountAndCalcGas failed")
+			}
+
+			if spent := interp.Gas.Spent(); spent != tt.wantSpent {
+				t.Fatalf("gas spent: got %d, want %d", spent, tt.wantSpent)
+			}
+		})
 	}
 }
 

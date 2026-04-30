@@ -1,9 +1,7 @@
 // Memory and storage opcode handlers: POP, MLOAD, MSTORE, MSTORE8, SLOAD, SSTORE, MCOPY, TLOAD, TSTORE.
 package vm
 
-import (
-	"github.com/Giulio2002/gevm/spec"
-)
+import "github.com/Giulio2002/gevm/spec"
 
 // opPop — Pop1 body. Stack check done by boilerplate.
 func opPop(interp *Interpreter) {
@@ -131,7 +129,25 @@ func opSstore(interp *Interpreter, host Host) {
 	}
 	isIstanbul := interp.RuntimeFlag.ForkID.IsEnabledIn(spec.Istanbul)
 	dynamicGas := interp.GasParams.SstoreDynamicGas(isIstanbul, &result.SStoreResult, result.IsCold)
+	var stateGas uint64
+	if interp.RuntimeFlag.ForkID.IsEnabledIn(spec.Amsterdam) &&
+		result.IsOriginalEqPresent() && result.IsOriginalZero() && !result.IsNewZero() {
+		dynamicGas = spec.GasWarmSstoreReset
+		if result.IsCold {
+			dynamicGas += spec.GasColdSloadCost
+		}
+		stateGas = 32 * host.CostPerStateByte()
+		if dynamicGas >= staticGas {
+			dynamicGas -= staticGas
+		} else {
+			dynamicGas = 0
+		}
+	}
 	if !interp.Gas.RecordCost(dynamicGas) {
+		interp.HaltOOG()
+		return
+	}
+	if stateGas != 0 && !interp.Gas.RecordStateCostUsed(stateGas) {
 		interp.HaltOOG()
 		return
 	}

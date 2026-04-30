@@ -5,15 +5,15 @@ import "github.com/Giulio2002/gevm/types"
 
 // StructLog records a single opcode execution step.
 type StructLog struct {
-	Pc      uint64               `json:"pc"`
-	Op      byte                 `json:"op"`
-	Gas     uint64               `json:"gas"`
-	GasCost uint64               `json:"gasCost"`
-	Depth   int                  `json:"depth"`
+	Pc      uint64          `json:"pc"`
+	Op      byte            `json:"op"`
+	Gas     uint64          `json:"gas"`
+	GasCost uint64          `json:"gasCost"`
+	Depth   int             `json:"depth"`
 	Stack   []types.Uint256 `json:"stack,omitempty"`
-	Memory  []byte               `json:"memory,omitempty"`
-	Err     error                `json:"-"`
-	ErrStr  string               `json:"error,omitempty"`
+	Memory  []byte          `json:"memory,omitempty"`
+	Err     error           `json:"-"`
+	ErrStr  string          `json:"error,omitempty"`
 }
 
 // LogConfig controls what data the StructLogger captures.

@@ -10,9 +10,9 @@ import (
 
 // KZG constants
 const (
-	kzgGasCost             uint64 = 50_000
-	kzgInputLength                = 192
-	kzgVersionedHashKZG    byte   = 0x01
+	kzgGasCost          uint64 = 50_000
+	kzgInputLength             = 192
+	kzgVersionedHashKZG byte   = 0x01
 )
 
 // kzgReturnValue is the fixed output of the KZG precompile:
@@ -61,17 +61,19 @@ func kzgToVersionedHash(commitment []byte) [32]byte {
 // KzgPointEvaluationRun implements the KZG point evaluation precompile (address 0x0A).
 //
 // Input (192 bytes):
-//   | versioned_hash (32) | z (32) | y (32) | commitment (48) | proof (48) |
+//
+//	| versioned_hash (32) | z (32) | y (32) | commitment (48) | proof (48) |
 //
 // Output (64 bytes):
-//   | FIELD_ELEMENTS_PER_BLOB (32) | BLS_MODULUS (32) |
+//
+//	| FIELD_ELEMENTS_PER_BLOB (32) | BLS_MODULUS (32) |
 func KzgPointEvaluationRun(input []byte, gasLimit uint64) PrecompileResult {
 	if gasLimit < kzgGasCost {
 		return PrecompileErr(PrecompileErrorOutOfGas)
 	}
 
 	if len(input) != kzgInputLength {
-		return PrecompileErr(PrecompileErrorBlobInvalidInputLength)
+		return PrecompileErrWithGas(PrecompileErrorBlobInvalidInputLength, kzgGasCost)
 	}
 
 	// Parse input fields
@@ -85,14 +87,14 @@ func KzgPointEvaluationRun(input []byte, gasLimit uint64) PrecompileResult {
 	computedHash := kzgToVersionedHash(commitment)
 	for i := 0; i < 32; i++ {
 		if versionedHash[i] != computedHash[i] {
-			return PrecompileErr(PrecompileErrorBlobMismatchedVersion)
+			return PrecompileErrWithGas(PrecompileErrorBlobMismatchedVersion, kzgGasCost)
 		}
 	}
 
 	// Get KZG context
 	ctx, err := getKZGContext()
 	if err != nil {
-		return PrecompileErr(PrecompileErrorFatal)
+		return PrecompileErrWithGas(PrecompileErrorFatal, kzgGasCost)
 	}
 
 	// Convert to KZG types
@@ -111,7 +113,7 @@ func KzgPointEvaluationRun(input []byte, gasLimit uint64) PrecompileResult {
 	// Verify KZG proof
 	verifyErr := ctx.VerifyKZGProof(kzgCommitment, zScalar, yScalar, kzgProof)
 	if verifyErr != nil {
-		return PrecompileErr(PrecompileErrorBlobVerifyKZGProofFailed)
+		return PrecompileErrWithGas(PrecompileErrorBlobVerifyKZGProofFailed, kzgGasCost)
 	}
 
 	return PrecompileOk(NewPrecompileOutput(kzgGasCost, kzgReturnValue[:]))

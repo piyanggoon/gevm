@@ -63,7 +63,7 @@ func mulUint64(a, b uint64) (uint64, uint64) {
 	w1 := t & mask32
 	w2 := t >> 32
 	w1 += a0 * b1
-	return a1*b1 + w2 + w1>>32, a*b
+	return a1*b1 + w2 + w1>>32, a * b
 }
 
 // Gas represents the state of gas during EVM execution.
@@ -72,6 +72,14 @@ type Gas struct {
 	limit uint64
 	// The remaining gas.
 	remaining uint64
+	// Amsterdam state-gas reservoir. This is separate from regular gas so
+	// GAS/EIP-150 see only the regular dimension.
+	stateRemaining uint64
+	// State gas charged during Amsterdam execution. GEVM still enforces these
+	// charges against the single internal meter, but the Erigon adapter settles
+	// them against the block state dimension.
+	stateCharged uint64
+	stateUsed    uint64
 	// Refunded gas. Used only at end of execution.
 	refunded int64
 	// Memoisation of values for memory expansion cost.
@@ -85,6 +93,17 @@ func NewGas(limit uint64) Gas {
 		remaining: limit,
 		refunded:  0,
 		memory:    NewMemoryGas(),
+	}
+}
+
+// NewGasMd creates a gas meter with separate regular and state dimensions.
+func NewGasMd(regularLimit uint64, stateLimit uint64) Gas {
+	return Gas{
+		limit:          regularLimit,
+		remaining:      regularLimit,
+		stateRemaining: stateLimit,
+		refunded:       0,
+		memory:         NewMemoryGas(),
 	}
 }
 
@@ -145,6 +164,43 @@ func (g *Gas) Remaining() uint64 {
 	return g.remaining
 }
 
+// StateRemaining returns the Amsterdam state-gas reservoir.
+func (g *Gas) StateRemaining() uint64 {
+	return g.stateRemaining
+}
+
+// TakeStateRemaining moves the full state reservoir out of this meter.
+func (g *Gas) TakeStateRemaining() uint64 {
+	state := g.stateRemaining
+	g.stateRemaining = 0
+	return state
+}
+
+// SetStateRemaining sets the Amsterdam state-gas reservoir.
+func (g *Gas) SetStateRemaining(state uint64) {
+	g.stateRemaining = state
+}
+
+// StateCharged returns Amsterdam state gas charged in this frame.
+func (g *Gas) StateCharged() uint64 {
+	return g.stateCharged
+}
+
+// StateUsed returns Amsterdam state gas consumed by successful execution.
+func (g *Gas) StateUsed() uint64 {
+	return g.stateUsed
+}
+
+// AddStateCharged folds child-frame state gas into the parent frame's total.
+func (g *Gas) AddStateCharged(cost uint64) {
+	g.stateCharged += cost
+}
+
+// AddStateUsed folds successful child-frame state gas into the parent frame.
+func (g *Gas) AddStateUsed(cost uint64) {
+	g.stateUsed += cost
+}
+
 // EraseCost adds back gas that was previously spent.
 func (g *Gas) EraseCost(returned uint64) {
 	g.remaining += returned
@@ -196,6 +252,32 @@ func (g *Gas) RecordCost(cost uint64) bool {
 		return true
 	}
 	return false
+}
+
+// RecordStateCost records an Amsterdam state-byte gas cost.
+func (g *Gas) RecordStateCost(cost uint64) bool {
+	if g.stateRemaining >= cost {
+		g.stateRemaining -= cost
+		g.stateCharged += cost
+		return true
+	}
+	spill := cost - g.stateRemaining
+	if g.remaining < spill {
+		return false
+	}
+	g.stateRemaining = 0
+	g.remaining -= spill
+	g.stateCharged += cost
+	return true
+}
+
+// RecordStateCostUsed records state gas that contributes to the block state dimension.
+func (g *Gas) RecordStateCostUsed(cost uint64) bool {
+	if !g.RecordStateCost(cost) {
+		return false
+	}
+	g.stateUsed += cost
+	return true
 }
 
 // RecordCostUnsafe records a cost using wrapping subtraction.

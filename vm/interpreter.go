@@ -1,9 +1,9 @@
 package vm
 
 import (
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/spec"
 	"github.com/Giulio2002/gevm/state"
+	"github.com/Giulio2002/gevm/types"
 )
 
 // ForkGas holds pre-computed static gas costs for the few opcodes whose
@@ -19,10 +19,10 @@ type ForkGas struct {
 }
 
 // forkGasCache is pre-computed at init time for every ForkID.
-var forkGasCache [20]ForkGas
+var forkGasCache [spec.Amsterdam + 1]ForkGas
 
 func init() {
-	for i := spec.ForkID(0); i <= spec.Osaka; i++ {
+	for i := spec.ForkID(0); i <= spec.Amsterdam; i++ {
 		forkGasCache[i] = buildForkGas(i)
 	}
 }
@@ -56,11 +56,11 @@ func buildForkGas(forkID spec.ForkID) ForkGas {
 		fg.Sload = spec.GasIstanbulSloadGas // 800
 	}
 	if forkID.IsEnabledIn(spec.Berlin) {
-		fg.Balance = spec.GasWarmStorageReadCost      // 100
-		fg.ExtCodeSize = spec.GasWarmStorageReadCost  // 100
-		fg.ExtCodeHash = spec.GasWarmStorageReadCost  // 100
-		fg.Sload = spec.GasWarmStorageReadCost        // 100
-		fg.Call = spec.GasWarmStorageReadCost          // 100
+		fg.Balance = spec.GasWarmStorageReadCost     // 100
+		fg.ExtCodeSize = spec.GasWarmStorageReadCost // 100
+		fg.ExtCodeHash = spec.GasWarmStorageReadCost // 100
+		fg.Sload = spec.GasWarmStorageReadCost       // 100
+		fg.Call = spec.GasWarmStorageReadCost        // 100
 	}
 	return fg
 }
@@ -123,15 +123,15 @@ type RuntimeFlags struct {
 // Interpreter is the main EVM interpreter that ties together
 // bytecode, gas, stack, memory, inputs, and execution control.
 type Interpreter struct {
-	Bytecode       *Bytecode
-	Gas            Gas
-	Stack          *Stack
-	ReturnData     types.Bytes
-	Memory         *Memory
-	Input          Inputs
-	RuntimeFlag    RuntimeFlags
-	GasParams *spec.GasParams
-	ForkGas   ForkGas
+	Bytecode    *Bytecode
+	Gas         Gas
+	Stack       *Stack
+	ReturnData  types.Bytes
+	Memory      *Memory
+	Input       Inputs
+	RuntimeFlag RuntimeFlags
+	GasParams   *spec.GasParams
+	ForkGas     ForkGas
 
 	// ActionData holds a pending frame action (CALL/CREATE).
 	// HasAction == true means the interpreter wants a sub-frame.
@@ -187,6 +187,11 @@ func NewInterpreter(
 		GasParams: gp,
 		ForkGas:   NewForkGas(forkID),
 	}
+}
+
+// SetStateGas sets the Amsterdam state-gas reservoir for this frame.
+func (interp *Interpreter) SetStateGas(stateGas uint64) {
+	interp.Gas.SetStateRemaining(stateGas)
 }
 
 // DefaultInterpreter creates an Interpreter with default values.
@@ -345,6 +350,7 @@ type Host interface {
 	BaseFee() types.Uint256
 	BlobGasPrice() types.Uint256
 	SlotNum() types.Uint256
+	CostPerStateByte() uint64
 
 	// Tx info
 	Caller() types.Address // tx origin
@@ -352,10 +358,10 @@ type Host interface {
 	BlobHash(index int) *types.Uint256
 
 	// Account access
-	Balance(addr types.Address) (types.Uint256, bool)  // balance, cold
-	CodeSize(addr types.Address) (int, bool)             // size, cold
-	CodeHash(addr types.Address) (types.B256, bool) // hash, cold
-	Code(addr types.Address) (types.Bytes, bool)    // code, cold
+	Balance(addr types.Address) (types.Uint256, bool) // balance, cold
+	CodeSize(addr types.Address) (int, bool)          // size, cold
+	CodeHash(addr types.Address) (types.B256, bool)   // hash, cold
+	Code(addr types.Address) (types.Bytes, bool)      // code, cold
 	SelfBalance(addr types.Address) types.Uint256
 
 	// LoadAccountCode loads account for CALL gas calculation.
@@ -412,10 +418,10 @@ const maxInt = int(^uint(0) >> 1)
 
 // --- OpContext interface implementation ---
 
-func (interp *Interpreter) MemoryData() []byte              { return interp.Memory.ContextMemory() }
+func (interp *Interpreter) MemoryData() []byte          { return interp.Memory.ContextMemory() }
 func (interp *Interpreter) StackData() []types.Uint256  { return interp.Stack.data[:interp.Stack.top] }
-func (interp *Interpreter) StackLen() int                    { return interp.Stack.top }
+func (interp *Interpreter) StackLen() int               { return interp.Stack.top }
 func (interp *Interpreter) CallerAddr() types.Address   { return interp.Input.CallerAddress }
 func (interp *Interpreter) ContractAddr() types.Address { return interp.Input.TargetAddress }
 func (interp *Interpreter) CallValue() types.Uint256    { return interp.Input.CallValue }
-func (interp *Interpreter) CallInput() []byte                { return interp.Input.Input }
+func (interp *Interpreter) CallInput() []byte           { return interp.Input.Input }

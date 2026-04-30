@@ -3,22 +3,23 @@
 package host
 
 import (
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/state"
+	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/vm"
 )
 
 // BlockEnv holds block-level environment data.
 type BlockEnv struct {
-	Beneficiary  types.Address
-	Timestamp    types.Uint256
-	Number       types.Uint256
-	Difficulty   types.Uint256
-	Prevrandao   *types.Uint256
-	GasLimit     types.Uint256
-	BaseFee      types.Uint256
-	BlobGasPrice types.Uint256
-	SlotNum      types.Uint256
+	Beneficiary      types.Address
+	Timestamp        types.Uint256
+	Number           types.Uint256
+	Difficulty       types.Uint256
+	Prevrandao       *types.Uint256
+	GasLimit         types.Uint256
+	BaseFee          types.Uint256
+	BlobGasPrice     types.Uint256
+	SlotNum          types.Uint256
+	CostPerStateByte uint64
 }
 
 // TxEnv holds transaction-level environment data.
@@ -59,20 +60,21 @@ var _ vm.Host = (*EvmHost)(nil)
 
 // --- Block info ---
 
-func (h *EvmHost) Beneficiary() types.Address { return h.Block.Beneficiary }
-func (h *EvmHost) Timestamp() types.Uint256      { return h.Block.Timestamp }
-func (h *EvmHost) BlockNumber() types.Uint256    { return h.Block.Number }
-func (h *EvmHost) Difficulty() types.Uint256     { return h.Block.Difficulty }
-func (h *EvmHost) Prevrandao() *types.Uint256    { return h.Block.Prevrandao }
-func (h *EvmHost) GasLimit() types.Uint256       { return h.Block.GasLimit }
-func (h *EvmHost) BaseFee() types.Uint256        { return h.Block.BaseFee }
-func (h *EvmHost) BlobGasPrice() types.Uint256   { return h.Block.BlobGasPrice }
-func (h *EvmHost) SlotNum() types.Uint256        { return h.Block.SlotNum }
-func (h *EvmHost) ChainId() types.Uint256        { return h.Cfg.ChainId }
+func (h *EvmHost) Beneficiary() types.Address  { return h.Block.Beneficiary }
+func (h *EvmHost) Timestamp() types.Uint256    { return h.Block.Timestamp }
+func (h *EvmHost) BlockNumber() types.Uint256  { return h.Block.Number }
+func (h *EvmHost) Difficulty() types.Uint256   { return h.Block.Difficulty }
+func (h *EvmHost) Prevrandao() *types.Uint256  { return h.Block.Prevrandao }
+func (h *EvmHost) GasLimit() types.Uint256     { return h.Block.GasLimit }
+func (h *EvmHost) BaseFee() types.Uint256      { return h.Block.BaseFee }
+func (h *EvmHost) BlobGasPrice() types.Uint256 { return h.Block.BlobGasPrice }
+func (h *EvmHost) SlotNum() types.Uint256      { return h.Block.SlotNum }
+func (h *EvmHost) CostPerStateByte() uint64    { return h.Block.CostPerStateByte }
+func (h *EvmHost) ChainId() types.Uint256      { return h.Cfg.ChainId }
 
 // --- Tx info ---
 
-func (h *EvmHost) Caller() types.Address         { return h.Tx.Caller }
+func (h *EvmHost) Caller() types.Address            { return h.Tx.Caller }
 func (h *EvmHost) EffectiveGasPrice() types.Uint256 { return h.Tx.EffectiveGasPrice }
 func (h *EvmHost) BlobHash(index int) *types.Uint256 {
 	if index < 0 || index >= len(h.Tx.BlobHashes) {
@@ -232,9 +234,22 @@ func (h *EvmHost) Log(addr types.Address, topics *[4]types.B256, numTopics int, 
 // --- Self destruct ---
 
 func (h *EvmHost) SelfDestruct(addr, target types.Address) vm.SelfDestructResult {
+	acc := h.Journal.State[addr]
+	newContract := acc != nil && acc.IsCreatedLocally()
+	balance := types.U256Zero
+	if acc != nil {
+		balance = acc.Info.Balance
+	}
 	result, err := h.Journal.Selfdestruct(addr, target)
 	if err != nil {
 		return vm.SelfDestructResult{}
+	}
+	if result.Data.HadValue {
+		if addr != target {
+			appendEIP7708TransferLog(h.Journal, addr, target, balance)
+		} else if newContract {
+			appendEIP7708BurnLog(h.Journal, addr, balance)
+		}
 	}
 	return vm.SelfDestructResult{
 		HadValue:            result.Data.HadValue,

@@ -65,10 +65,10 @@ func (g *GasParams) Get(id GasId) uint64 {
 // gasParamsCache pre-computes GasParams for every ForkID at init time.
 // Since GasParams is read-only during execution, all interpreters sharing the
 // same ForkID can safely share a single pointer.
-var gasParamsCache [20]*GasParams
+var gasParamsCache [Amsterdam + 1]*GasParams
 
 func init() {
-	for i := ForkID(0); i <= Osaka; i++ {
+	for i := ForkID(0); i <= Amsterdam; i++ {
 		gasParamsCache[i] = newGasParams(i)
 	}
 }
@@ -260,13 +260,17 @@ type SStoreResult struct {
 	NewValue      types.Uint256
 }
 
-func (s *SStoreResult) IsOriginalZero() bool      { return types.IsZeroPtr(&s.OriginalValue) }
-func (s *SStoreResult) IsPresentZero() bool       { return types.IsZeroPtr(&s.PresentValue) }
-func (s *SStoreResult) IsNewZero() bool           { return types.IsZeroPtr(&s.NewValue) }
-func (s *SStoreResult) IsOriginalEqPresent() bool { return types.EqPtr(&s.OriginalValue, &s.PresentValue) }
-func (s *SStoreResult) IsOriginalEqNew() bool     { return types.EqPtr(&s.OriginalValue, &s.NewValue) }
-func (s *SStoreResult) IsNewEqPresent() bool      { return types.EqPtr(&s.NewValue, &s.PresentValue) }
-func (s *SStoreResult) NewValuesChangesPresent() bool { return !types.EqPtr(&s.NewValue, &s.PresentValue) }
+func (s *SStoreResult) IsOriginalZero() bool { return types.IsZeroPtr(&s.OriginalValue) }
+func (s *SStoreResult) IsPresentZero() bool  { return types.IsZeroPtr(&s.PresentValue) }
+func (s *SStoreResult) IsNewZero() bool      { return types.IsZeroPtr(&s.NewValue) }
+func (s *SStoreResult) IsOriginalEqPresent() bool {
+	return types.EqPtr(&s.OriginalValue, &s.PresentValue)
+}
+func (s *SStoreResult) IsOriginalEqNew() bool { return types.EqPtr(&s.OriginalValue, &s.NewValue) }
+func (s *SStoreResult) IsNewEqPresent() bool  { return types.EqPtr(&s.NewValue, &s.PresentValue) }
+func (s *SStoreResult) NewValuesChangesPresent() bool {
+	return !types.EqPtr(&s.NewValue, &s.PresentValue)
+}
 
 // SstoreDynamicGas calculates the dynamic SSTORE gas cost.
 func (g *GasParams) SstoreDynamicGas(isIstanbul bool, vals *SStoreResult, isCold bool) uint64 {

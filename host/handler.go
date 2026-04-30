@@ -4,14 +4,17 @@ package host
 import (
 	"github.com/Giulio2002/gevm/opcode"
 	"github.com/Giulio2002/gevm/precompiles"
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/spec"
 	"github.com/Giulio2002/gevm/state"
+	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/vm"
 )
 
 // MaxCodeSize is the maximum contract code size (EIP-170).
 const MaxCodeSize = 24576
+
+// MaxCodeSizeAmsterdam is the EIP-7954 contract code size limit.
+const MaxCodeSizeAmsterdam = 32 * 1024
 
 // CallStackLimit is the maximum call depth.
 const CallStackLimit = 1024
@@ -21,13 +24,13 @@ const CallStackLimit = 1024
 type Handler struct {
 	Host           *EvmHost
 	Precompiles    *precompiles.PrecompileSet
-	RootMemory     *vm.Memory                      // Root memory for the transaction, shared across frames via child contexts
-	ReturnAlloc    *vm.ReturnDataArena              // Arena for pooling RETURN/REVERT output buffers (owned by Evm)
-	JumpTableCache map[types.B256][]byte       // Cached JUMPDEST bitmaps keyed by code hash (persists across pooled Evm reuse)
-	RootInterp     *vm.Interpreter                  // Embedded root interpreter for depth-0 calls (nil = use pool)
-	RootBytecode   *vm.Bytecode                     // Embedded root bytecode for depth-0 calls (nil = use pool)
-	Runner         vm.Runner                        // Opcode loop runner (DefaultRunner or TracingRunner)
-	hooks          *vm.Hooks                        // Lifecycle hooks (OnEnter/OnExit/OnTxStart/OnTxEnd), extracted from Runner
+	RootMemory     *vm.Memory            // Root memory for the transaction, shared across frames via child contexts
+	ReturnAlloc    *vm.ReturnDataArena   // Arena for pooling RETURN/REVERT output buffers (owned by Evm)
+	JumpTableCache map[types.B256][]byte // Cached JUMPDEST bitmaps keyed by code hash (persists across pooled Evm reuse)
+	RootInterp     *vm.Interpreter       // Embedded root interpreter for depth-0 calls (nil = use pool)
+	RootBytecode   *vm.Bytecode          // Embedded root bytecode for depth-0 calls (nil = use pool)
+	Runner         vm.Runner             // Opcode loop runner (DefaultRunner or TracingRunner)
+	hooks          *vm.Hooks             // Lifecycle hooks (OnEnter/OnExit/OnTxStart/OnTxEnd), extracted from Runner
 }
 
 // NewHandler creates a new Handler.
@@ -65,7 +68,7 @@ func (h *Handler) executeCall(inputs *vm.CallInputs, depth int, parentMem *vm.Me
 	// Depth limit check
 	if depth > CallStackLimit {
 		return vm.NewCallOutcome(
-			vm.NewInterpreterResult(vm.InstructionResultCallTooDeep, nil, vm.NewGas(inputs.GasLimit)),
+			vm.NewInterpreterResult(vm.InstructionResultCallTooDeep, nil, vm.NewGasMd(inputs.GasLimit, inputs.StateGasLimit)),
 			inputs.ReturnMemoryOffset,
 		)
 	}
@@ -88,20 +91,24 @@ func (h *Handler) executeCall(inputs *vm.CallInputs, depth int, parentMem *vm.Me
 				result = vm.InstructionResultFatalExternalError
 			}
 			return vm.NewCallOutcome(
-				vm.NewInterpreterResult(result, nil, vm.NewGas(inputs.GasLimit)),
+				vm.NewInterpreterResult(result, nil, vm.NewGasMd(inputs.GasLimit, inputs.StateGasLimit)),
 				inputs.ReturnMemoryOffset,
 			)
 		}
+		appendEIP7708TransferLog(h.Host.Journal, inputs.Caller, inputs.TargetAddress, *tv)
 	}
 
 	// Check if the bytecode address is a precompile
 	if precompile := h.Precompiles.Get(inputs.BytecodeAddress); precompile != nil {
+		if _, err := h.Host.Journal.LoadAccount(inputs.TargetAddress); err == nil {
+			h.Host.Journal.Touch(inputs.TargetAddress)
+		}
 		// OnEnter/OnExit for precompile calls
 		if h.hooks != nil && h.hooks.OnEnter != nil {
 			h.hooks.OnEnter(depth, callSchemeToOpcode(inputs.Scheme), inputs.Caller,
 				inputs.BytecodeAddress, inputs.Input, inputs.GasLimit, inputs.Value.Value)
 		}
-		outcome := h.executePrecompile(precompile, inputs.Input, inputs.GasLimit, inputs.ReturnMemoryOffset, checkpoint)
+		outcome := h.executePrecompile(precompile, inputs.Input, inputs.GasLimit, inputs.StateGasLimit, inputs.ReturnMemoryOffset, checkpoint)
 		if h.hooks != nil && h.hooks.OnExit != nil {
 			gasUsed := inputs.GasLimit - outcome.Result.Gas.Remaining()
 			h.hooks.OnExit(depth, outcome.Result.Output, gasUsed,
@@ -130,7 +137,7 @@ func (h *Handler) executeCall(inputs *vm.CallInputs, depth int, parentMem *vm.Me
 		}
 		h.Host.Journal.CheckpointCommit()
 		outcome := vm.NewCallOutcome(
-			vm.NewInterpreterResult(vm.InstructionResultStop, nil, vm.NewGas(inputs.GasLimit)),
+			vm.NewInterpreterResult(vm.InstructionResultStop, nil, vm.NewGasMd(inputs.GasLimit, inputs.StateGasLimit)),
 			inputs.ReturnMemoryOffset,
 		)
 		if h.hooks != nil && h.hooks.OnExit != nil {
@@ -165,6 +172,7 @@ func (h *Handler) executeCall(inputs *vm.CallInputs, depth int, parentMem *vm.Me
 		vm.ResetEmbeddedBytecodeWithHash(bc, code, acl.CodeHash, cachedJT)
 		interp = h.RootInterp
 		interp.Clear(childMem, bc, interpInput, inputs.IsStatic, forkID, inputs.GasLimit)
+		interp.SetStateGas(inputs.StateGasLimit)
 		interp.ReturnAlloc = h.ReturnAlloc
 		interp.Journal = h.Host.Journal
 	} else {
@@ -177,6 +185,7 @@ func (h *Handler) executeCall(inputs *vm.CallInputs, depth int, parentMem *vm.Me
 			forkID,
 			inputs.GasLimit,
 		)
+		interp.SetStateGas(inputs.StateGasLimit)
 		interp.ReturnAlloc = h.ReturnAlloc
 		interp.Journal = h.Host.Journal
 		pooled = true
@@ -216,6 +225,9 @@ func (h *Handler) executeCall(inputs *vm.CallInputs, depth int, parentMem *vm.Me
 		h.Host.Journal.CheckpointCommit()
 	} else {
 		h.Host.Journal.CheckpointRevert(checkpoint)
+		if depth > 0 && forkID.IsEnabledIn(spec.Amsterdam) {
+			result.Gas.SetStateRemaining(result.Gas.StateRemaining() + result.Gas.StateCharged())
+		}
 	}
 
 	// OnExit hook
@@ -232,11 +244,12 @@ func (h *Handler) executePrecompile(
 	precompile *precompiles.Precompile,
 	input types.Bytes,
 	gasLimit uint64,
+	stateGasLimit uint64,
 	retMemOffset vm.MemoryRange,
 	checkpoint state.JournalCheckpoint,
 ) vm.CallOutcome {
 	// Initialize result with full gas limit
-	gas := vm.NewGas(gasLimit)
+	gas := vm.NewGasMd(gasLimit, stateGasLimit)
 
 	// Execute the precompile
 	execResult := precompile.Execute(input, gasLimit)
@@ -247,8 +260,12 @@ func (h *Handler) executePrecompile(
 		var resultCode vm.InstructionResult
 		if *execResult.Err == precompiles.PrecompileErrorOutOfGas {
 			resultCode = vm.InstructionResultPrecompileOOG
+			gas.RecordCost(gasLimit)
 		} else {
 			resultCode = vm.InstructionResultPrecompileError
+			if execResult.Output.GasUsed > 0 {
+				gas.RecordCost(execResult.Output.GasUsed)
+			}
 		}
 		return vm.NewCallOutcome(
 			vm.NewInterpreterResult(resultCode, nil, gas),
@@ -284,7 +301,7 @@ func (h *Handler) executeCreate(inputs *vm.CreateInputs, depth int, parentMem *v
 	// Depth limit check
 	if depth > CallStackLimit {
 		return vm.NewCreateOutcome(
-			vm.NewInterpreterResult(vm.InstructionResultCallTooDeep, nil, vm.NewGas(inputs.GasLimit)),
+			vm.NewInterpreterResult(vm.InstructionResultCallTooDeep, nil, vm.NewGasMd(inputs.GasLimit, inputs.StateGasLimit)),
 			nil,
 		)
 	}
@@ -293,7 +310,7 @@ func (h *Handler) executeCreate(inputs *vm.CreateInputs, depth int, parentMem *v
 	callerResult, err := h.Host.Journal.LoadAccount(inputs.Caller)
 	if err != nil {
 		return vm.NewCreateOutcome(
-			vm.NewInterpreterResult(vm.InstructionResultFatalExternalError, nil, vm.NewGas(inputs.GasLimit)),
+			vm.NewInterpreterResult(vm.InstructionResultFatalExternalError, nil, vm.NewGasMd(inputs.GasLimit, inputs.StateGasLimit)),
 			nil,
 		)
 	}
@@ -302,7 +319,7 @@ func (h *Handler) executeCreate(inputs *vm.CreateInputs, depth int, parentMem *v
 	// Check caller balance
 	if callerAcc.Info.Balance.Lt(inputs.Value) {
 		return vm.NewCreateOutcome(
-			vm.NewInterpreterResult(vm.InstructionResultOutOfFunds, nil, vm.NewGas(inputs.GasLimit)),
+			vm.NewInterpreterResult(vm.InstructionResultOutOfFunds, nil, vm.NewGasMd(inputs.GasLimit, inputs.StateGasLimit)),
 			nil,
 		)
 	}
@@ -314,7 +331,7 @@ func (h *Handler) executeCreate(inputs *vm.CreateInputs, depth int, parentMem *v
 		// so gas is returned to the parent frame. Address=nil means CREATE "failed"
 		// but the parent still gets its gas back.
 		return vm.NewCreateOutcome(
-			vm.NewInterpreterResult(vm.InstructionResultReturn, nil, vm.NewGas(inputs.GasLimit)),
+			vm.NewInterpreterResult(vm.InstructionResultReturn, nil, vm.NewGasMd(inputs.GasLimit, inputs.StateGasLimit)),
 			nil,
 		)
 	}
@@ -337,7 +354,7 @@ func (h *Handler) executeCreate(inputs *vm.CreateInputs, depth int, parentMem *v
 	_, loadErr := h.Host.Journal.LoadAccount(createdAddress)
 	if loadErr != nil {
 		return vm.NewCreateOutcome(
-			vm.NewInterpreterResult(vm.InstructionResultFatalExternalError, nil, vm.NewGas(inputs.GasLimit)),
+			vm.NewInterpreterResult(vm.InstructionResultFatalExternalError, nil, vm.NewGasMd(inputs.GasLimit, inputs.StateGasLimit)),
 			nil,
 		)
 	}
@@ -359,10 +376,11 @@ func (h *Handler) executeCreate(inputs *vm.CreateInputs, depth int, parentMem *v
 			result = vm.InstructionResultFatalExternalError
 		}
 		return vm.NewCreateOutcome(
-			vm.NewInterpreterResult(result, nil, vm.NewGas(inputs.GasLimit)),
+			vm.NewInterpreterResult(result, nil, vm.NewGasMd(inputs.GasLimit, inputs.StateGasLimit)),
 			nil,
 		)
 	}
+	appendEIP7708TransferLog(h.Host.Journal, inputs.Caller, createdAddress, inputs.Value)
 
 	// Empty init code: commit and return the address
 	if len(inputs.InitCode) == 0 {
@@ -373,7 +391,7 @@ func (h *Handler) executeCreate(inputs *vm.CreateInputs, depth int, parentMem *v
 		h.Host.Journal.CheckpointCommit()
 		addr := createdAddress
 		outcome := vm.NewCreateOutcome(
-			vm.NewInterpreterResult(vm.InstructionResultStop, nil, vm.NewGas(inputs.GasLimit)),
+			vm.NewInterpreterResult(vm.InstructionResultStop, nil, vm.NewGasMd(inputs.GasLimit, inputs.StateGasLimit)),
 			&addr,
 		)
 		if h.hooks != nil && h.hooks.OnExit != nil {
@@ -401,6 +419,7 @@ func (h *Handler) executeCreate(inputs *vm.CreateInputs, depth int, parentMem *v
 		forkID,
 		inputs.GasLimit,
 	)
+	interp.SetStateGas(inputs.StateGasLimit)
 	interp.ReturnAlloc = h.ReturnAlloc
 
 	// Set depth for tracer hooks
@@ -425,6 +444,9 @@ func (h *Handler) executeCreate(inputs *vm.CreateInputs, depth int, parentMem *v
 
 	// Validate create result
 	outcome := h.returnCreate(result, createdAddress, checkpoint, forkID)
+	if depth > 0 && forkID.IsEnabledIn(spec.Amsterdam) && !outcome.Result.Result.IsOk() {
+		outcome.Result.Gas.SetStateRemaining(outcome.Result.Gas.StateRemaining() + outcome.Result.Gas.StateCharged())
+	}
 
 	// OnExit hook
 	if h.hooks != nil && h.hooks.OnExit != nil {
@@ -459,6 +481,9 @@ func (h *Handler) returnCreate(
 
 	// EIP-170: code size limit (Spurious Dragon+)
 	maxSize := MaxCodeSize
+	if forkID.IsEnabledIn(spec.Amsterdam) {
+		maxSize = MaxCodeSizeAmsterdam
+	}
 	if forkID.IsEnabledIn(spec.SpuriousDragon) && len(output) > maxSize {
 		h.Host.Journal.CheckpointRevert(checkpoint)
 		result.Result = vm.InstructionResultCreateContractSizeLimit
@@ -468,6 +493,11 @@ func (h *Handler) returnCreate(
 	// Code deposit cost
 	gp := spec.NewGasParams(forkID)
 	depositCost := gp.CodeDepositCost(uint64(len(output)))
+	var stateGas uint64
+	if forkID.IsEnabledIn(spec.Amsterdam) {
+		depositCost = gp.Keccak256Cost(uint64(len(output)))
+		stateGas = uint64(len(output)) * h.Host.CostPerStateByte()
+	}
 	if !result.Gas.RecordCost(depositCost) {
 		if forkID.IsEnabledIn(spec.Homestead) {
 			// Homestead+: OOG on code deposit
@@ -477,6 +507,11 @@ func (h *Handler) returnCreate(
 		}
 		// Pre-Homestead: no code stored, but still success
 		output = nil
+	}
+	if stateGas != 0 && !result.Gas.RecordStateCostUsed(stateGas) {
+		h.Host.Journal.CheckpointRevert(checkpoint)
+		result.Result = vm.InstructionResultOutOfGas
+		return vm.NewCreateOutcome(result, nil)
 	}
 
 	// Commit and store code
@@ -547,9 +582,16 @@ func (h *Handler) handleCallReturn(interp *vm.Interpreter, outcome vm.CallOutcom
 	if result.Result.IsOkOrRevert() {
 		interp.Gas.EraseCost(result.Gas.Remaining())
 	}
+	if h.Host.Journal.Cfg.Spec.IsEnabledIn(spec.Amsterdam) {
+		interp.Gas.SetStateRemaining(result.Gas.StateRemaining())
+	}
 
-	// Record refunds only on success
+	// Record state gas and refunds only on success. Failed child frames restore
+	// their state gas to the parent reservoir and must not count as consumed by
+	// the parent frame.
 	if result.Result.IsOk() {
+		interp.Gas.AddStateCharged(result.Gas.StateCharged())
+		interp.Gas.AddStateUsed(result.Gas.StateUsed())
 		interp.Gas.RecordRefund(result.Gas.Refunded())
 	}
 }
@@ -576,9 +618,16 @@ func (h *Handler) handleCreateReturn(interp *vm.Interpreter, outcome vm.CreateOu
 	if result.Result.IsOkOrRevert() {
 		interp.Gas.EraseCost(result.Gas.Remaining())
 	}
+	if h.Host.Journal.Cfg.Spec.IsEnabledIn(spec.Amsterdam) {
+		interp.Gas.SetStateRemaining(result.Gas.StateRemaining())
+	}
 
-	// Record refunds only on success
+	// Record state gas and refunds only on success. Failed child frames restore
+	// their state gas to the parent reservoir and must not count as consumed by
+	// the parent frame.
 	if result.Result.IsOk() {
+		interp.Gas.AddStateCharged(result.Gas.StateCharged())
+		interp.Gas.AddStateUsed(result.Gas.StateUsed())
 		interp.Gas.RecordRefund(result.Gas.Refunded())
 	}
 }

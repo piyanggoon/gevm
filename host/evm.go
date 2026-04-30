@@ -3,12 +3,14 @@
 package host
 
 import (
+	"bytes"
+	"sort"
 	"sync"
 
 	"github.com/Giulio2002/gevm/precompiles"
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/spec"
 	"github.com/Giulio2002/gevm/state"
+	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/vm"
 )
 
@@ -18,6 +20,21 @@ type TxKind int
 const (
 	TxKindCall   TxKind = iota // CALL transaction (with target address)
 	TxKindCreate               // CREATE transaction (deploy new contract)
+)
+
+var (
+	secp256k1N = types.U256FromBytes([]byte{
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe,
+		0xba, 0xae, 0xdc, 0xe6, 0xaf, 0x48, 0xa0, 0x3b,
+		0xbf, 0xd2, 0x5e, 0x8c, 0xd0, 0x36, 0x41, 0x41,
+	})
+	secp256k1HalfN = types.U256FromBytes([]byte{
+		0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0x5d, 0x57, 0x6e, 0x73, 0x57, 0xa4, 0x50, 0x1d,
+		0xdf, 0xe9, 0x2f, 0x46, 0x68, 0x1b, 0x20, 0xa0,
+	})
 )
 
 // TxType distinguishes transaction formats.
@@ -61,9 +78,9 @@ type Transaction struct {
 	MaxPriorityFeePerGas types.Uint256 // EIP-1559: max tip per gas
 	MaxFeePerBlobGas     types.Uint256 // EIP-4844: max fee per blob gas
 	Nonce                uint64
-	AccessList           []AccessListItem     // EIP-2930 access list
-	BlobHashes           []types.Uint256 // EIP-4844 blob versioned hashes
-	AuthorizationList    []Authorization      // EIP-7702 authorization list
+	AccessList           []AccessListItem // EIP-2930 access list
+	BlobHashes           []types.Uint256  // EIP-4844 blob versioned hashes
+	AuthorizationList    []Authorization  // EIP-7702 authorization list
 }
 
 // ResultKind distinguishes execution outcomes.
@@ -77,14 +94,20 @@ const (
 
 // ExecutionResult holds the final result of EVM transaction execution.
 type ExecutionResult struct {
-	Kind            ResultKind
-	Reason          vm.InstructionResult
-	GasUsed         uint64
-	GasRefund       int64
-	Output          types.Bytes
-	Logs            []state.Log
-	CreatedAddr     *types.Address // Only for successful CREATE
-	ValidationError bool                // True if failure was during tx validation (before execution)
+	Kind              ResultKind
+	Reason            vm.InstructionResult
+	GasUsed           uint64
+	GasUsedPreRefund  uint64
+	StateGasRefund    uint64
+	StateGasUsed      uint64
+	StateGasCharged   uint64
+	StateGasConsumed  uint64
+	StateGasRemaining uint64
+	GasRefund         int64
+	Output            types.Bytes
+	Logs              []state.Log
+	CreatedAddr       *types.Address // Only for successful CREATE
+	ValidationError   bool           // True if failure was during tx validation (before execution)
 }
 
 // IsSuccess returns true if execution succeeded.
@@ -100,6 +123,7 @@ func (r *ExecutionResult) IsHalt() bool { return r.Kind == ResultHalt }
 const (
 	txBaseGas           uint64 = 21000
 	txCreateGas         uint64 = 32000 // Additional gas for CREATE transactions
+	txCreateGasEIP8037  uint64 = 9000  // EIP-8037 Amsterdam CREATE regular component
 	txDataZeroGas       uint64 = 4     // Gas per zero byte in calldata
 	txDataNonZeroGas    uint64 = 16    // Gas per non-zero byte in calldata (post-Istanbul: 16, pre: 68)
 	txDataNonZeroGasOld uint64 = 68    // Pre-Istanbul non-zero byte cost
@@ -107,18 +131,29 @@ const (
 
 	// EIP-7623: calldata gas floor constants
 	totalCostFloorPerToken        uint64 = 10 // Floor cost per token
+	totalCostFloorPerTokenEIP7976 uint64 = 16 // Amsterdam calldata/access-list floor cost per token
+	standardTokensPerByte         uint64 = 4
+	accessListAddressBytes        uint64 = 20
+	accessListStorageKeyBytes     uint64 = 32
 	nonZeroByteTokenMultiplier    uint64 = 4  // Istanbul+ non-zero byte multiplier (16/4)
 	nonZeroByteTokenMultiplierOld uint64 = 17 // Pre-Istanbul non-zero byte multiplier (68/4)
 
 	// EIP-7702: authorization list gas constants
 	eip7702PerEmptyAccountCost uint64 = 25000 // Per authorization in intrinsic gas
+	eip7702PerAuthBaseCost8037 uint64 = 7500  // EIP-8037 regular authorization base cost
 	eip7702PerAuthBaseCost     uint64 = 12500 // Base cost per auth (refund = empty - base)
+
+	stateBytesNewAccount uint64 = 112
+	stateBytesAuthBase   uint64 = 23
+	txMaxRegularGasLimit uint64 = 16_777_216
 )
 
 // InitialAndFloorGas holds both the initial intrinsic gas and the EIP-7623 floor gas.
 type InitialAndFloorGas struct {
-	InitialGas uint64
-	FloorGas   uint64
+	InitialGas        uint64
+	InitialRegularGas uint64
+	InitialStateGas   uint64
+	FloorGas          uint64
 }
 
 // Evm is the top-level EVM execution engine.
@@ -128,10 +163,10 @@ type Evm struct {
 	TxEnv          TxEnv
 	Cfg            CfgEnv
 	ForkID         spec.ForkID
-	Runner         vm.Runner                       // pluggable interpreter (nil = DefaultRunner)
-	ReturnAlloc    vm.ReturnDataArena              // arena for pooling RETURN/REVERT output buffers
-	host           EvmHost                         // reusable host embedded in pooled Evm (avoids heap escape)
-	JumpTableCache map[types.B256][]byte      // cached JUMPDEST bitmaps, persists across pooled reuse
+	Runner         vm.Runner             // pluggable interpreter (nil = DefaultRunner)
+	ReturnAlloc    vm.ReturnDataArena    // arena for pooling RETURN/REVERT output buffers
+	host           EvmHost               // reusable host embedded in pooled Evm (avoids heap escape)
+	JumpTableCache map[types.B256][]byte // cached JUMPDEST bitmaps, persists across pooled reuse
 
 	// Embedded root frame objects: avoid pool Get/Put for depth-0 calls.
 	// Initialized lazily on first use, then reused across pooled Evm reuse.
@@ -178,6 +213,9 @@ func (evm *Evm) ReleaseEvm() {
 
 // MaxInitCodeSize is the maximum initcode size (EIP-3860): 2 * MaxCodeSize.
 const MaxInitCodeSize = 2 * MaxCodeSize
+
+// MaxInitCodeSizeAmsterdam is the EIP-7954 initcode limit.
+const MaxInitCodeSizeAmsterdam = 2 * MaxCodeSizeAmsterdam
 
 // Transact executes a transaction and returns the result.
 func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
@@ -279,7 +317,7 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 	}
 
 	// EIP-7825 (Osaka): transaction gas limit cap
-	if evm.ForkID.IsEnabledIn(spec.Osaka) && tx.GasLimit > spec.TxGasLimitCap {
+	if evm.ForkID.IsEnabledIn(spec.Osaka) && !evm.ForkID.IsEnabledIn(spec.Amsterdam) && tx.GasLimit > spec.TxGasLimitCap {
 		return haltResult(vm.InstructionResultGasLimitTooHigh)
 	}
 
@@ -291,7 +329,11 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 
 	// EIP-3860: initcode size limit (Shanghai+)
 	if evm.ForkID.IsEnabledIn(spec.Shanghai) && tx.Kind == TxKindCreate {
-		if uint64(len(tx.Input)) > MaxInitCodeSize {
+		maxInitCodeSize := uint64(MaxInitCodeSize)
+		if evm.ForkID.IsEnabledIn(spec.Amsterdam) {
+			maxInitCodeSize = uint64(MaxInitCodeSizeAmsterdam)
+		}
+		if uint64(len(tx.Input)) > maxInitCodeSize {
 			return haltResult(vm.InstructionResultCreateInitCodeSizeLimit)
 		}
 	}
@@ -309,6 +351,27 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 	}
 
 	// --- Phase 2: Pre-execution ---
+
+	precompileSet := precompiles.ForSpec(evm.ForkID)
+	// Transaction-scoped warm addresses must be installed before any account
+	// validation load, so those loads cannot be reverted into cold accesses.
+	evm.Journal.WarmAddresses.SetPrecompileAddresses(precompileSet.WarmAddressMap())
+	if evm.ForkID.IsEnabledIn(spec.Shanghai) {
+		evm.Journal.WarmAddresses.SetCoinbase(evm.Block.Beneficiary)
+	}
+	if evm.ForkID.IsEnabledIn(spec.Berlin) {
+		evm.Journal.WarmAddresses.AddAddress(tx.Caller)
+		if tx.Kind == TxKindCall {
+			evm.Journal.WarmAddresses.AddAddress(tx.To)
+		}
+	}
+	if evm.ForkID.IsEnabledIn(spec.Prague) {
+		for i := range tx.AuthorizationList {
+			if authority, ok := recoverEIP7702AuthorityForAccess(&tx.AuthorizationList[i], evm.Cfg.ChainId); ok {
+				evm.Journal.WarmAddresses.AddAddress(authority)
+			}
+		}
+	}
 
 	// Load and validate caller
 	callerResult, err := evm.Journal.LoadAccount(tx.Caller)
@@ -404,7 +467,7 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 	}
 	handler := Handler{
 		Host:           &evm.host,
-		Precompiles:    precompiles.ForSpec(evm.ForkID),
+		Precompiles:    precompileSet,
 		RootMemory:     rootMemory,
 		ReturnAlloc:    &evm.ReturnAlloc,
 		JumpTableCache: evm.JumpTableCache,
@@ -417,16 +480,6 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 		handler.hooks = tr.Hooks
 	}
 
-	// Warm precompile addresses via shared map pointer (no Account objects created).
-	// Precompile accounts are lazily loaded on first CALL; the warm map ensures no cold gas.
-	evm.Journal.WarmAddresses.SetPrecompileAddresses(handler.Precompiles.WarmAddressMap())
-
-	// Warm coinbase (EIP-3651, Shanghai+) — just set in WarmAddresses.
-	// The account is lazily loaded when accessed (rewardBeneficiary or contract BALANCE).
-	if evm.ForkID.IsEnabledIn(spec.Shanghai) {
-		evm.Journal.WarmAddresses.SetCoinbase(evm.Block.Beneficiary)
-	}
-
 	// Warm access list addresses and storage keys (EIP-2930+)
 	for _, item := range tx.AccessList {
 		evm.Journal.LoadAccount(item.Address)
@@ -437,8 +490,12 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 
 	// EIP-7702: apply authorization list (Prague+)
 	var eip7702Refund int64
+	var eip7702StateGasRefund uint64
 	if tx.TxType == TxTypeEIP7702 && len(tx.AuthorizationList) > 0 {
-		eip7702Refund = evm.applyEIP7702AuthList(tx)
+		eip7702Refund, eip7702StateGasRefund = evm.applyEIP7702AuthList(tx)
+	}
+	if evm.ForkID.IsEnabledIn(spec.Prague) && tx.Kind == TxKindCall {
+		evm.warmDelegatedDesignation(tx.To)
 	}
 
 	// --- Phase 3: Execution ---
@@ -449,6 +506,20 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 	}
 
 	gasAvailable := tx.GasLimit - intrinsicGas
+	stateGasAvailable := uint64(0)
+	initialRegularGas := tx.GasLimit
+	initialStateGas := uint64(0)
+	if evm.ForkID.IsEnabledIn(spec.Amsterdam) {
+		executionGas := tx.GasLimit - intrinsicGas
+		regularBudget := uint64(0)
+		if txMaxRegularGasLimit > initAndFloorGas.InitialRegularGas {
+			regularBudget = txMaxRegularGasLimit - initAndFloorGas.InitialRegularGas
+		}
+		gasAvailable = min(regularBudget, executionGas)
+		stateGasAvailable = executionGas - gasAvailable
+		initialRegularGas = initAndFloorGas.InitialRegularGas + gasAvailable
+		initialStateGas = initAndFloorGas.InitialStateGas + stateGasAvailable
+	}
 
 	// Call executeCall/executeCreate directly to avoid FrameInput heap escape.
 	var frameResult vm.FrameResult
@@ -465,15 +536,17 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 			Scheme:             vm.CallSchemeCall,
 			IsStatic:           false,
 		}
+		callInputs.StateGasLimit = stateGasAvailable
 		frameResult = vm.NewFrameResultCall(handler.executeCall(&callInputs, 0, rootMemory))
 
 	case TxKindCreate:
 		createInputs := vm.CreateInputs{
-			Caller:   tx.Caller,
-			Scheme:   vm.NewCreateSchemeCreate(),
-			Value:    tx.Value,
-			InitCode: tx.Input,
-			GasLimit: gasAvailable,
+			Caller:        tx.Caller,
+			Scheme:        vm.NewCreateSchemeCreate(),
+			Value:         tx.Value,
+			InitCode:      tx.Input,
+			GasLimit:      gasAvailable,
+			StateGasLimit: stateGasAvailable,
 		}
 		frameResult = vm.NewFrameResultCreate(handler.executeCreate(&createInputs, 0, rootMemory))
 	}
@@ -497,28 +570,74 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 	execRemaining := interpResult.Gas.Remaining()
 	execRefunded := interpResult.Gas.Refunded()
 
-	gas := vm.NewGasSpent(tx.GasLimit) // limit = tx.GasLimit, remaining = 0
+	gasLimitForSettlement := tx.GasLimit
+	if evm.ForkID.IsEnabledIn(spec.Amsterdam) {
+		gasLimitForSettlement = initialRegularGas + initialStateGas
+	}
+	gas := vm.NewGasSpent(gasLimitForSettlement) // limit = tx.GasLimit, remaining = 0
 	if interpResult.Result.IsOkOrRevert() {
-		gas.EraseCost(execRemaining) // remaining += execRemaining
+		gas.EraseCost(execRemaining + interpResult.Gas.StateRemaining()) // remaining += execRemaining
 	}
 	if interpResult.Result.IsOk() {
 		gas.RecordRefund(execRefunded)
 	}
-	// EIP-7702: authorization refund is applied unconditionally (even on revert/failure).
-	if eip7702Refund > 0 {
+	if eip7702StateGasRefund > 0 {
+		spent := gas.Spent()
+		if eip7702StateGasRefund >= spent {
+			gas.SetSpent(0)
+		} else {
+			gas.SetSpent(spent - eip7702StateGasRefund)
+		}
+	}
+	// Amsterdam accounts for this adjustment in state gas instead of regular refunds.
+	if eip7702Refund > 0 && !evm.ForkID.IsEnabledIn(spec.Amsterdam) {
 		gas.RecordRefund(eip7702Refund)
 	}
 
 	// Step 1: Refund cap per EIP-3529 — applied unconditionally.
 	// For reverted/failed executions, only eip7702 refund may be non-zero.
 	evm.applyRefundLimit(&gas)
+	gasUsedPreRefund := gas.Spent()
 
 	// Step 2: EIP-7623 gas floor check (Prague+).
 	if initAndFloorGas.FloorGas > 0 && gas.SpentSubRefunded() < initAndFloorGas.FloorGas {
 		gas.SetSpent(initAndFloorGas.FloorGas)
 		gas.SetRefund(0)
 	}
-
+	if evm.ForkID.IsEnabledIn(spec.Amsterdam) && interpResult.Result.IsOk() {
+		stateCharged := interpResult.Gas.StateCharged()
+		stateUsed := interpResult.Gas.StateUsed()
+		if stateCharged > stateUsed {
+			spent := gas.Spent()
+			restored := stateCharged - stateUsed
+			if restored >= spent {
+				gas.SetSpent(initAndFloorGas.FloorGas)
+			} else {
+				gas.SetSpent(max(spent-restored, initAndFloorGas.FloorGas))
+			}
+			gas.SetRefund(0)
+		}
+	}
+	if evm.ForkID.IsEnabledIn(spec.Amsterdam) && !interpResult.Result.IsOk() {
+		gasCap := spec.TxGasLimitCap
+		if tx.Kind == TxKindCreate {
+			gasCap += stateBytesNewAccount * evm.Block.CostPerStateByte
+		}
+		if stateCharged := interpResult.Gas.StateCharged(); stateCharged > 0 && tx.GasLimit > stateCharged {
+			gasCap = min(gasCap, tx.GasLimit-stateCharged)
+		}
+		if gas.Used() > gasCap {
+			gas.SetSpent(gasCap)
+			gas.SetRefund(0)
+		}
+		if stateRemaining := interpResult.Gas.StateRemaining(); stateRemaining > 0 && tx.GasLimit > stateRemaining {
+			regularSpent := tx.GasLimit - stateRemaining
+			if gas.Used() > regularSpent {
+				gas.SetSpent(regularSpent)
+				gas.SetRefund(0)
+			}
+		}
+	}
 	// Step 3: Reimburse caller for unused gas.
 	reimburseGas := gas.Remaining()
 	if gas.Refunded() > 0 {
@@ -531,6 +650,7 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 	// Step 4: Reward beneficiary (coinbase).
 	// Uses gas.Used() = gas.Spent() - refunded (includes intrinsic gas).
 	evm.rewardBeneficiary(effectiveGasPrice, gas.Used())
+	evm.appendResidualSelfdestructBurnLogs()
 
 	// Build execution result. Copy Output and Logs so the result is safe
 	// to hold after ReleaseEvm (both alias pooled memory).
@@ -552,11 +672,16 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 		}
 	}
 	result := ExecutionResult{
-		GasUsed:     gas.Used(),
-		GasRefund:   gas.Refunded(),
-		Output:      output,
-		Logs:        logs,
-		CreatedAddr: createdAddr,
+		GasUsed:           gas.Used(),
+		GasUsedPreRefund:  gasUsedPreRefund,
+		StateGasRefund:    eip7702StateGasRefund,
+		StateGasCharged:   interpResult.Gas.StateCharged(),
+		StateGasConsumed:  interpResult.Gas.StateUsed(),
+		StateGasRemaining: interpResult.Gas.StateRemaining(),
+		GasRefund:         gas.Refunded(),
+		Output:            output,
+		Logs:              logs,
+		CreatedAddr:       createdAddr,
 	}
 
 	switch {
@@ -581,6 +706,55 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 	}
 
 	return result
+}
+
+func recoverEIP7702AuthorityForAccess(auth *Authorization, chainID types.Uint256) (types.Address, bool) {
+	if !auth.ChainId.IsZero() && auth.ChainId != chainID {
+		return types.Address{}, false
+	}
+	if auth.Nonce == ^uint64(0) {
+		return types.Address{}, false
+	}
+	return recoverEIP7702Authority(auth)
+}
+
+func (evm *Evm) warmDelegatedDesignation(address types.Address) {
+	result, err := evm.Journal.LoadAccount(address)
+	if err != nil {
+		return
+	}
+	acc := result.Data
+	code := acc.Info.Code
+	if code == nil && evm.Journal.DB != nil && acc.Info.CodeHash != types.KeccakEmpty {
+		loaded, err := evm.Journal.DB.CodeByHash(acc.Info.CodeHash)
+		if err != nil {
+			return
+		}
+		code = loaded
+		acc.Info.Code = code
+	}
+	if delegate, ok := EIP7702Address(code); ok {
+		evm.Journal.WarmAddresses.AddAddress(delegate)
+	}
+}
+
+func (evm *Evm) appendResidualSelfdestructBurnLogs() {
+	if !evm.ForkID.IsEnabledIn(spec.Amsterdam) {
+		return
+	}
+	addrs := make([]types.Address, 0)
+	for addr, acc := range evm.Journal.State {
+		if acc == nil || !acc.IsSelfdestructed() || acc.Info.Balance == types.U256Zero {
+			continue
+		}
+		addrs = append(addrs, addr)
+	}
+	sort.Slice(addrs, func(i, j int) bool {
+		return bytes.Compare(addrs[i][:], addrs[j][:]) < 0
+	})
+	for _, addr := range addrs {
+		appendEIP7708BurnLog(evm.Journal, addr, evm.Journal.State[addr].Info.Balance)
+	}
 }
 
 // Gas constants for access list intrinsic gas (EIP-2930).
@@ -612,37 +786,66 @@ func (evm *Evm) calcIntrinsicGas(tx *Transaction) InitialAndFloorGas {
 	tokensInCalldata := zeroBytes + nonZeroBytes*nonZeroMultiplier
 
 	// Initial gas: tokens * 4 (token cost) + base + access list + create
-	result.InitialGas = txBaseGas
-	result.InitialGas += tokensInCalldata * txDataZeroGas // token_cost = 4
+	result.InitialRegularGas = txBaseGas
+	result.InitialRegularGas += tokensInCalldata * txDataZeroGas // token_cost = 4
 
 	// CREATE additional cost (Homestead+, EIP-2)
 	if tx.Kind == TxKindCreate && evm.ForkID.IsEnabledIn(spec.Homestead) {
-		result.InitialGas += txCreateGas
+		if evm.ForkID.IsEnabledIn(spec.Amsterdam) {
+			result.InitialRegularGas += txCreateGasEIP8037
+			result.InitialStateGas += stateBytesNewAccount * evm.Block.CostPerStateByte
+		} else {
+			result.InitialRegularGas += txCreateGas
+		}
 
 		// EIP-3860: initcode word cost
 		if evm.ForkID.IsEnabledIn(spec.Shanghai) {
 			words := (uint64(len(tx.Input)) + 31) / 32
-			result.InitialGas += words * initcodeWordGas
+			result.InitialRegularGas += words * initcodeWordGas
 		}
 	}
 
 	// EIP-2930: access list gas
+	var accessListAccounts, accessListStorageKeys uint64
 	for _, item := range tx.AccessList {
 		_ = item.Address
-		result.InitialGas += txAccessListAddressGas
-		result.InitialGas += uint64(len(item.StorageKeys)) * txAccessListStorageGas
+		accessListAccounts++
+		accessListStorageKeys += uint64(len(item.StorageKeys))
+		result.InitialRegularGas += txAccessListAddressGas
+		result.InitialRegularGas += uint64(len(item.StorageKeys)) * txAccessListStorageGas
+	}
+
+	if evm.ForkID.IsEnabledIn(spec.Amsterdam) && (accessListAccounts > 0 || accessListStorageKeys > 0) {
+		accessListBytes := accessListAccounts*accessListAddressBytes + accessListStorageKeys*accessListStorageKeyBytes
+		accessListDataGas := accessListBytes * standardTokensPerByte * totalCostFloorPerTokenEIP7976
+		result.InitialRegularGas += accessListDataGas
 	}
 
 	// EIP-7702: authorization list gas (PER_EMPTY_ACCOUNT_COST * len)
 	if len(tx.AuthorizationList) > 0 {
-		result.InitialGas += uint64(len(tx.AuthorizationList)) * eip7702PerEmptyAccountCost
+		if evm.ForkID.IsEnabledIn(spec.Amsterdam) {
+			auths := uint64(len(tx.AuthorizationList))
+			result.InitialRegularGas += auths * eip7702PerAuthBaseCost8037
+			result.InitialStateGas += auths * (stateBytesNewAccount + stateBytesAuthBase) * evm.Block.CostPerStateByte
+		} else {
+			result.InitialRegularGas += uint64(len(tx.AuthorizationList)) * eip7702PerEmptyAccountCost
+		}
 	}
 
 	// EIP-7623: floor gas = TOTAL_COST_FLOOR_PER_TOKEN * tokens + base_gas
 	if evm.ForkID.IsEnabledIn(spec.Prague) {
-		result.FloorGas = totalCostFloorPerToken*tokensInCalldata + txBaseGas
+		floorTokens := tokensInCalldata
+		floorCostPerToken := totalCostFloorPerToken
+		if evm.ForkID.IsEnabledIn(spec.Amsterdam) {
+			floorTokens = uint64(len(tx.Input)) * standardTokensPerByte
+			accessListBytes := accessListAccounts*accessListAddressBytes + accessListStorageKeys*accessListStorageKeyBytes
+			floorTokens += accessListBytes * standardTokensPerByte
+			floorCostPerToken = totalCostFloorPerTokenEIP7976
+		}
+		result.FloorGas = floorCostPerToken*floorTokens + txBaseGas
 	}
 
+	result.InitialGas = result.InitialRegularGas + result.InitialStateGas
 	return result
 }
 
@@ -702,9 +905,10 @@ func (evm *Evm) rewardBeneficiary(gasPrice types.Uint256, gasUsed uint64) {
 }
 
 // applyEIP7702AuthList processes the authorization list for EIP-7702 transactions.
-// Returns the total refund to apply (existing authorities get PER_EMPTY_ACCOUNT_COST - PER_AUTH_BASE_COST refund).
-func (evm *Evm) applyEIP7702AuthList(tx *Transaction) int64 {
+// Returns the regular and state refund adjustments for existing authorities.
+func (evm *Evm) applyEIP7702AuthList(tx *Transaction) (int64, uint64) {
 	var refund int64
+	var stateGasRefund uint64
 
 	for i := range tx.AuthorizationList {
 		auth := &tx.AuthorizationList[i]
@@ -744,7 +948,11 @@ func (evm *Evm) applyEIP7702AuthList(tx *Transaction) int64 {
 
 		// 7. Refund: if authority already existed (not empty), refund partial cost
 		if !acc.IsEmpty() {
-			refund += int64(eip7702PerEmptyAccountCost - eip7702PerAuthBaseCost)
+			if evm.ForkID.IsEnabledIn(spec.Amsterdam) {
+				stateGasRefund += stateBytesNewAccount * evm.Block.CostPerStateByte
+			} else {
+				refund += int64(eip7702PerEmptyAccountCost - eip7702PerAuthBaseCost)
+			}
 		}
 
 		// 8. Set delegation code
@@ -764,12 +972,18 @@ func (evm *Evm) applyEIP7702AuthList(tx *Transaction) int64 {
 		acc.Info.Nonce++
 	}
 
-	return refund
+	return refund, stateGasRefund
 }
 
 // recoverEIP7702Authority recovers the authority address from an EIP-7702 authorization.
 // Signing hash: keccak256(0x05 || rlp([chain_id, address, nonce]))
 func recoverEIP7702Authority(auth *Authorization) (types.Address, bool) {
+	r := types.U256FromBytes(auth.R[:])
+	s := types.U256FromBytes(auth.S[:])
+	if auth.YParity > 1 || r.IsZero() || s.IsZero() || !r.Lt(secp256k1N) || !s.Lt(secp256k1N) || s.Gt(secp256k1HalfN) {
+		return types.Address{}, false
+	}
+
 	// RLP encode [chain_id, address, nonce]
 	chainIdBytes := rlpEncodeU256Compact(auth.ChainId)
 	addrBytes := rlpEncodeFixedBytes(auth.Address[:])

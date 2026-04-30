@@ -2,8 +2,8 @@
 package precompiles
 
 import (
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/spec"
+	"github.com/Giulio2002/gevm/types"
 )
 
 // PrecompileOutput holds the result of a successful precompile execution.
@@ -49,6 +49,15 @@ func PrecompileOk(output PrecompileOutput) PrecompileResult {
 // PrecompileErr creates an error result.
 func PrecompileErr(err PrecompileError) PrecompileResult {
 	return PrecompileResult{Err: &err}
+}
+
+// PrecompileErrWithGas creates an error result after the precompile's required
+// gas has been charged.
+func PrecompileErrWithGas(err PrecompileError, gasUsed uint64) PrecompileResult {
+	return PrecompileResult{
+		Output: PrecompileOutput{GasUsed: gasUsed},
+		Err:    &err,
+	}
 }
 
 // IsOk returns true if the precompile succeeded.

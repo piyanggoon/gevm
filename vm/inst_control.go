@@ -3,6 +3,7 @@ package vm
 
 import (
 	"github.com/Giulio2002/gevm/opcode"
+	"github.com/Giulio2002/gevm/spec"
 	"github.com/Giulio2002/gevm/types"
 )
 
@@ -172,7 +173,19 @@ func opSelfdestruct(interp *Interpreter, host Host) {
 	addr := interp.Input.TargetAddress
 	result := host.SelfDestruct(addr, target)
 	cost := interp.GasParams.SelfdestructCost(result.HadValue && !result.TargetExists, result.IsCold)
+	var stateGas uint64
+	if interp.RuntimeFlag.ForkID.IsEnabledIn(spec.Amsterdam) && result.HadValue && !result.TargetExists {
+		cost = 0
+		stateGas = 112 * host.CostPerStateByte()
+		if result.IsCold {
+			cost += interp.GasParams.SelfdestructColdCost()
+		}
+	}
 	if !interp.Gas.RecordCost(cost) {
+		interp.HaltOOG()
+		return
+	}
+	if stateGas != 0 && !interp.Gas.RecordStateCostUsed(stateGas) {
 		interp.HaltOOG()
 		return
 	}

@@ -3,8 +3,8 @@ package state
 import (
 	"testing"
 
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/spec"
+	"github.com/Giulio2002/gevm/types"
 )
 
 // mockDB is a simple in-memory database for testing.
@@ -454,6 +454,23 @@ func TestJournalCodeChangeRevert(t *testing.T) {
 	}
 }
 
+func TestJournalSetCodeWithHashOwnsCodeBytes(t *testing.T) {
+	j := NewJournal(nil)
+	j.SetForkID(spec.Shanghai)
+
+	a1 := addr(1)
+	j.State[a1] = NewAccountFromInfo(AccountInfo{CodeHash: types.KeccakEmpty})
+	j.State[a1].MarkWarmWithTransactionID(0)
+
+	code := types.Bytes{0x73, 0x01, 0xff}
+	j.SetCodeWithHash(a1, code, types.B256{0xAB})
+
+	code[0] = 0x00
+	if got := j.State[a1].Info.Code[0]; got != 0x73 {
+		t.Fatalf("journal code aliases caller buffer, got first byte %#x", got)
+	}
+}
+
 func TestJournalAccountCreatedRevert(t *testing.T) {
 	j := NewJournal(nil)
 	j.SetForkID(spec.Shanghai)
@@ -520,6 +537,44 @@ func TestJournalCommitTx(t *testing.T) {
 	// State should be preserved
 	if j.State[a1].Info.Balance != u256(1000) {
 		t.Fatal("state should be preserved across commit")
+	}
+}
+
+func TestJournalCommitTxClearsTransactionLocalAccountStatus(t *testing.T) {
+	j := NewJournal(nil)
+	j.SetForkID(spec.Cancun)
+
+	a1 := addr(1)
+	a2 := addr(2)
+	j.State[a1] = NewAccountFromInfo(AccountInfo{
+		Balance:  u256(1),
+		Nonce:    1,
+		CodeHash: types.B256{0xAB},
+		Code:     types.Bytes{0x73, 0x01, 0xff},
+	})
+	j.State[a1].MarkWarmWithTransactionID(0)
+	j.State[a1].MarkCreatedLocally()
+
+	j.CommitTx()
+
+	if j.State[a1].IsCreatedLocally() {
+		t.Fatal("created-local flag should not survive CommitTx")
+	}
+	if j.State[a1].Info.Code == nil || j.State[a1].Info.Code[0] != 0x73 {
+		t.Fatal("non-selfdestructed account code should survive CommitTx")
+	}
+
+	j.State[a1].MarkSelfdestructedLocally()
+	if _, err := j.Selfdestruct(a1, a2); err != nil {
+		t.Fatal(err)
+	}
+	j.CommitTx()
+
+	if j.State[a1].IsSelfdestructedLocally() {
+		t.Fatal("selfdestruct-local flag should not survive CommitTx")
+	}
+	if j.State[a1].Info.CodeHash != types.KeccakEmpty {
+		t.Fatal("locally selfdestructed account should be cleared after CommitTx")
 	}
 }
 
@@ -681,6 +736,35 @@ func TestJournalWarmAddresses(t *testing.T) {
 	}
 	if j.WarmAddresses.IsWarm(addr(0xAA)) {
 		t.Fatal("access list should be cold after clear")
+	}
+}
+
+func TestJournalAccessListWarmLoadSurvivesRevert(t *testing.T) {
+	j := NewJournal(nil)
+	address := addr(0xAA)
+
+	if _, err := j.LoadAccount(address); err != nil {
+		t.Fatal(err)
+	}
+	j.State[address].MarkCold()
+	j.WarmAddresses.AddAddress(address)
+
+	checkpoint := j.Checkpoint()
+	result, err := j.LoadAccount(address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.IsCold {
+		t.Fatal("access-list address should not be reported cold")
+	}
+	j.CheckpointRevert(checkpoint)
+
+	result, err = j.LoadAccount(address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.IsCold {
+		t.Fatal("access-list address should remain warm after checkpoint revert")
 	}
 }
 

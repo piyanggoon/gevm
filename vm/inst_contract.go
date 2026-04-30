@@ -2,12 +2,15 @@
 package vm
 
 import (
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/spec"
+	"github.com/Giulio2002/gevm/types"
 )
 
-// Maximum initcode size: 2 * MAX_CODE_SIZE (24576) = 49152
-const maxInitcodeSize = 2 * 24576
+// Maximum initcode size: 2 * MAX_CODE_SIZE.
+const (
+	maxInitcodeSize          = 2 * 24576
+	maxInitcodeSizeAmsterdam = 2 * 32 * 1024
+)
 
 // createInner is the shared logic for CREATE and CREATE2.
 func createInner(interp *Interpreter, host Host, isCreate2 bool) {
@@ -32,7 +35,11 @@ func createInner(interp *Interpreter, host Host, isCreate2 bool) {
 	if codeLen != 0 {
 		// EIP-3860: limit and meter initcode
 		if interp.RuntimeFlag.ForkID.IsEnabledIn(spec.Shanghai) {
-			if codeLen > maxInitcodeSize {
+			maxSize := maxInitcodeSize
+			if interp.RuntimeFlag.ForkID.IsEnabledIn(spec.Amsterdam) {
+				maxSize = maxInitcodeSizeAmsterdam
+			}
+			if codeLen > maxSize {
 				interp.Halt(InstructionResultCreateInitCodeSizeLimit)
 				return
 			}
@@ -75,7 +82,19 @@ func createInner(interp *Interpreter, host Host, isCreate2 bool) {
 	} else {
 		gasCost = interp.GasParams.CreateCost()
 	}
+	var stateGas uint64
+	if interp.RuntimeFlag.ForkID.IsEnabledIn(spec.Amsterdam) {
+		gasCost = 9000
+		stateGas = 112 * host.CostPerStateByte()
+		if isCreate2 {
+			gasCost += interp.GasParams.Keccak256Cost(uint64(codeLen))
+		}
+	}
 	if !interp.Gas.RecordCost(gasCost) {
+		interp.HaltOOG()
+		return
+	}
+	if stateGas != 0 && !interp.Gas.RecordStateCostUsed(stateGas) {
 		interp.HaltOOG()
 		return
 	}
@@ -91,13 +110,18 @@ func createInner(interp *Interpreter, host Host, isCreate2 bool) {
 		interp.HaltOOG()
 		return
 	}
+	stateGasLimit := uint64(0)
+	if interp.RuntimeFlag.ForkID.IsEnabledIn(spec.Amsterdam) {
+		stateGasLimit = interp.Gas.TakeStateRemaining()
+	}
 
 	interp.SetCreateAction(CreateInputs{
-		Caller:   interp.Input.TargetAddress,
-		Scheme:   scheme,
-		Value:    value,
-		InitCode: initCode,
-		GasLimit: gasLimit,
+		Caller:        interp.Input.TargetAddress,
+		Scheme:        scheme,
+		Value:         value,
+		InitCode:      initCode,
+		GasLimit:      gasLimit,
+		StateGasLimit: stateGasLimit,
 	})
 }
 
@@ -158,6 +182,7 @@ func loadAccountAndCalcGas(
 	interp *Interpreter,
 	host Host,
 	to types.Address,
+	value types.Uint256,
 	transfersValue bool,
 	createEmptyAccount bool,
 	stackGasLimit uint64,
@@ -174,8 +199,12 @@ func loadAccountAndCalcGas(
 	}
 
 	// 2. Load account and calculate access gas
-	accountGas := loadAccountDelegated(interp, host, to, transfersValue, createEmptyAccount)
+	accountGas, stateGas := loadAccountDelegated(interp, host, to, transfersValue, createEmptyAccount)
 	if !interp.Gas.RecordCost(accountGas) {
+		interp.HaltOOG()
+		return 0, false
+	}
+	if stateGas != 0 && !interp.Gas.RecordStateCostUsed(stateGas) {
 		interp.HaltOOG()
 		return 0, false
 	}
@@ -199,7 +228,6 @@ func loadAccountAndCalcGas(
 		interp.HaltOOG()
 		return 0, false
 	}
-
 	// 4. Add call stipend if value transferred
 	if transfersValue {
 		gasLimit += interp.GasParams.CallStipend()
@@ -217,12 +245,13 @@ func loadAccountDelegated(
 	addr types.Address,
 	transfersValue bool,
 	createEmptyAccount bool,
-) uint64 {
+) (uint64, uint64) {
 	forkID := interp.RuntimeFlag.ForkID
 	isBerlin := forkID.IsEnabledIn(spec.Berlin)
 	isSpuriousDragon := forkID.IsEnabledIn(spec.SpuriousDragon)
 
 	var cost uint64
+	var stateGas uint64
 
 	// Load the account
 	acl := host.LoadAccountCode(addr)
@@ -244,13 +273,18 @@ func loadAccountDelegated(
 		}
 	}
 
-	// New account cost: if account is empty and we're creating an empty account
-	// (i.e., transferring value to a new account)
+	// New account cost: pre-Spurious CALL charges G_newaccount for empty
+	// targets even without value; Spurious+ only charges when value creates
+	// the account.
 	if acl.IsEmpty && createEmptyAccount {
+		if forkID.IsEnabledIn(spec.Amsterdam) && transfersValue {
+			stateGas += 112 * host.CostPerStateByte()
+			return cost, stateGas
+		}
 		cost += interp.GasParams.NewAccountCost(isSpuriousDragon, transfersValue)
 	}
 
-	return cost
+	return cost, stateGas
 }
 
 // isEIP7702Code returns true if code is an EIP-7702 delegation designator.
@@ -286,7 +320,7 @@ func opCall(interp *Interpreter, host Host) {
 		return
 	}
 	gasLimitOnStack := stackGasLimit.AsUsizeSaturated()
-	gasLimit, ok := loadAccountAndCalcGas(interp, host, to, transfersValue, true, gasLimitOnStack)
+	gasLimit, ok := loadAccountAndCalcGas(interp, host, to, value, transfersValue, true, gasLimitOnStack)
 	if !ok {
 		return
 	}
@@ -298,6 +332,7 @@ func opCall(interp *Interpreter, host Host) {
 		Input:              callInput,
 		ReturnMemoryOffset: outputRange,
 		GasLimit:           gasLimit,
+		StateGasLimit:      interp.Gas.TakeStateRemaining(),
 		BytecodeAddress:    to,
 		TargetAddress:      to,
 		Caller:             interp.Input.TargetAddress,
@@ -321,7 +356,7 @@ func opCallcode(interp *Interpreter, host Host) {
 		return
 	}
 	gasLimitOnStack := stackGasLimit.AsUsizeSaturated()
-	gasLimit, ok := loadAccountAndCalcGas(interp, host, to, transfersValue, false, gasLimitOnStack)
+	gasLimit, ok := loadAccountAndCalcGas(interp, host, to, value, transfersValue, false, gasLimitOnStack)
 	if !ok {
 		return
 	}
@@ -333,6 +368,7 @@ func opCallcode(interp *Interpreter, host Host) {
 		Input:              callInput,
 		ReturnMemoryOffset: outputRange,
 		GasLimit:           gasLimit,
+		StateGasLimit:      interp.Gas.TakeStateRemaining(),
 		BytecodeAddress:    to,
 		TargetAddress:      interp.Input.TargetAddress,
 		Caller:             interp.Input.TargetAddress,
@@ -355,7 +391,7 @@ func opDelegatecall(interp *Interpreter, host Host) {
 		return
 	}
 	gasLimitOnStack := stackGasLimit.AsUsizeSaturated()
-	gasLimit, ok := loadAccountAndCalcGas(interp, host, to, false, false, gasLimitOnStack)
+	gasLimit, ok := loadAccountAndCalcGas(interp, host, to, types.U256Zero, false, false, gasLimitOnStack)
 	if !ok {
 		return
 	}
@@ -367,6 +403,7 @@ func opDelegatecall(interp *Interpreter, host Host) {
 		Input:              callInput,
 		ReturnMemoryOffset: outputRange,
 		GasLimit:           gasLimit,
+		StateGasLimit:      interp.Gas.TakeStateRemaining(),
 		BytecodeAddress:    to,
 		TargetAddress:      interp.Input.TargetAddress,
 		Caller:             interp.Input.CallerAddress,
@@ -389,7 +426,7 @@ func opStaticcall(interp *Interpreter, host Host) {
 		return
 	}
 	gasLimitOnStack := stackGasLimit.AsUsizeSaturated()
-	gasLimit, ok := loadAccountAndCalcGas(interp, host, to, false, false, gasLimitOnStack)
+	gasLimit, ok := loadAccountAndCalcGas(interp, host, to, types.U256Zero, false, false, gasLimitOnStack)
 	if !ok {
 		return
 	}
@@ -401,6 +438,7 @@ func opStaticcall(interp *Interpreter, host Host) {
 		Input:              callInput,
 		ReturnMemoryOffset: outputRange,
 		GasLimit:           gasLimit,
+		StateGasLimit:      interp.Gas.TakeStateRemaining(),
 		BytecodeAddress:    to,
 		TargetAddress:      to,
 		Caller:             interp.Input.TargetAddress,

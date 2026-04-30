@@ -3,8 +3,8 @@ package state
 import (
 	"sync"
 
-	"github.com/Giulio2002/gevm/types"
 	"github.com/Giulio2002/gevm/spec"
+	"github.com/Giulio2002/gevm/types"
 )
 
 // WarmAddresses tracks which addresses and storage keys are warm-loaded.
@@ -42,6 +42,16 @@ func (w *WarmAddresses) SetCoinbase(address types.Address) {
 // SetAccessList sets the access list.
 func (w *WarmAddresses) SetAccessList(accessList map[types.Address]map[types.Uint256]struct{}) {
 	w.accessList = accessList
+}
+
+// AddAddress marks an address warm for the current transaction.
+func (w *WarmAddresses) AddAddress(address types.Address) {
+	if w.accessList == nil {
+		w.accessList = make(map[types.Address]map[types.Uint256]struct{})
+	}
+	if _, ok := w.accessList[address]; !ok {
+		w.accessList[address] = nil
+	}
 }
 
 // AccessList returns the access list.
@@ -120,7 +130,6 @@ type Journal struct {
 	// Account arena: slab allocator for Account objects.
 	// Avoids sync.Pool Get/Put overhead per account (typically 3-6 per tx).
 	accountArena accountArena
-
 }
 
 // accountArena is a slab allocator for Account objects.
@@ -290,6 +299,8 @@ func (j *Journal) CheckpointRevert(checkpoint JournalCheckpoint) {
 
 // CommitTx prepares for the next transaction.
 func (j *Journal) CommitTx() {
+	j.advanceTransactionOriginals()
+	j.clearTransactionLocalAccountStatus()
 	clear(j.TransientStorage)
 	j.Depth = 0
 	j.Entries = j.Entries[:0]
@@ -297,6 +308,31 @@ func (j *Journal) CommitTx() {
 	j.TransactionID++
 	j.Logs = j.Logs[:0]
 	j.SelfdestructedAddresses = j.SelfdestructedAddresses[:0]
+}
+
+func (j *Journal) advanceTransactionOriginals() {
+	for _, acc := range j.State {
+		if acc == nil {
+			continue
+		}
+		acc.OriginalInfo = acc.Info
+		for _, slot := range acc.Storage {
+			if slot == nil {
+				continue
+			}
+			slot.OriginalValue = slot.PresentValue
+		}
+	}
+}
+
+func (j *Journal) clearTransactionLocalAccountStatus() {
+	for _, acc := range j.State {
+		if acc.IsSelfdestructedLocally() {
+			acc.Selfdestruct()
+			acc.UnmarkSelfdestructedLocally()
+		}
+		acc.UnmarkCreatedLocally()
+	}
 }
 
 // DiscardTx discards the current transaction by reverting all journal entries.
@@ -455,7 +491,9 @@ func (j *Journal) loadAccountMutInternal(address types.Address) (*Account, bool,
 			// Unmark locally created.
 			acc.UnmarkCreatedLocally()
 			// Journal loading of cold account.
-			j.Entries = append(j.Entries, JournalEntryAccountWarmed(address))
+			if isCold {
+				j.Entries = append(j.Entries, JournalEntryAccountWarmed(address))
+			}
 		}
 		return acc, isCold, nil
 	}
@@ -629,8 +667,8 @@ func (j *Journal) SStoreInto(address types.Address, key *types.Uint256, newValue
 // Writes directly into outOriginal/outPresent/outNew to avoid intermediate struct copies.
 func (j *Journal) sstoreInner(address types.Address, key *types.Uint256, newValue *types.Uint256,
 	outOriginal, outPresent, outNew *types.Uint256) (bool, error) {
-	k := *key       // local copy: safe even if key aliases outOriginal/outPresent/outNew
-	v := *newValue  // local copy
+	k := *key      // local copy: safe even if key aliases outOriginal/outPresent/outNew
+	v := *newValue // local copy
 
 	// Load account once (combines Touch + SLoad account lookup).
 	acc, ok := j.stateAccount(address)
@@ -953,7 +991,11 @@ func (j *Journal) SetCodeWithHash(address types.Address, code types.Bytes, hash 
 	j.touchAccount(address, acc)
 	j.Entries = append(j.Entries, JournalEntryCodeChange(address))
 	acc.Info.CodeHash = hash
-	acc.Info.Code = code
+	if code == nil {
+		acc.Info.Code = nil
+		return
+	}
+	acc.Info.Code = append(types.Bytes(nil), code...)
 }
 
 // --- Balance Increment ---

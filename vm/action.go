@@ -91,6 +91,8 @@ type CallInputs struct {
 	ReturnMemoryOffset MemoryRange
 	// Gas limit of the call.
 	GasLimit uint64
+	// Amsterdam state-gas reservoir passed to the child frame.
+	StateGasLimit uint64
 	// Address whose bytecode will be executed.
 	BytecodeAddress types.Address
 	// Target address (where storage is modified).
@@ -123,6 +125,8 @@ type CreateInputs struct {
 	InitCode types.Bytes
 	// Gas limit of the create call.
 	GasLimit uint64
+	// Amsterdam state-gas reservoir passed to the child frame.
+	StateGasLimit uint64
 }
 
 // FrameInputKind distinguishes Call from Create frame inputs.
