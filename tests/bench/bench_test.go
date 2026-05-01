@@ -491,7 +491,7 @@ func BenchmarkTxType(b *testing.B) {
 
 	storage := map[uint256.Int]uint256.Int{
 		*uint256.NewInt(0): largeBalance,
-		callerSlot:        largeBalance,
+		callerSlot:         largeBalance,
 	}
 
 	// ABI: transfer(address to, uint256 amount) selector = 0xa9059cbb
@@ -681,8 +681,12 @@ func BenchmarkOpcode(b *testing.B) {
 		{"KECCAK256", opcodeLoop(0x60, 0x20, 0x60, 0x00, 0x20, 0x50)},        // PUSH1(32) PUSH1(0) KECCAK256 POP
 		{"MLOAD", opcodeLoop(0x60, 0x00, 0x51, 0x50)},                        // PUSH1(0) MLOAD POP
 		{"MSTORE", opcodeLoop(0x60, 0x2A, 0x60, 0x00, 0x52)},                 // PUSH1(42) PUSH1(0) MSTORE
+		{"MSTORE8", opcodeLoop(0x60, 0x2A, 0x60, 0x00, 0x53)},                // PUSH1(42) PUSH1(0) MSTORE8
 		{"CALLDATALOAD", opcodeLoop(0x60, 0x00, 0x35, 0x50)},                 // PUSH1(0) CALLDATALOAD POP
 		{"PUSH1_POP", opcodeLoop(0x60, 0x01, 0x50)},                          // PUSH1(1) POP (baseline dispatch)
+		{"PUSH5_POP", pushNPopLoop(5)},                                       // PUSH5 POP
+		{"PUSH16_POP", pushNPopLoop(16)},                                     // PUSH16 POP
+		{"PUSH31_POP", pushNPopLoop(31)},                                     // PUSH31 POP
 		{"DUP1_POP", opcodeLoopWithSetup([]byte{0x60, 0x00}, 0x80, 0x50)},    // setup: PUSH1(0), loop: DUP1 POP
 		{"SWAP1", opcodeLoopWithSetup([]byte{0x60, 0x00, 0x60, 0x00}, 0x90)}, // setup: PUSH1(0) PUSH1(0), loop: SWAP1
 	}
@@ -701,6 +705,16 @@ func opcodeLoop(body ...byte) []byte {
 	code = append(code, body...)
 	code = append(code, 0x60, 0x00, 0x56) // PUSH1(0) JUMP
 	return code
+}
+
+func pushNPopLoop(n int) []byte {
+	body := make([]byte, 0, n+2)
+	body = append(body, byte(0x5F+n))
+	for i := 1; i <= n; i++ {
+		body = append(body, byte(i))
+	}
+	body = append(body, 0x50)
+	return opcodeLoop(body...)
 }
 
 // opcodeLoopWithSetup builds: <setup> JUMPDEST <body bytes> PUSH1(<jumpdest>) JUMP

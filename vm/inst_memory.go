@@ -66,14 +66,16 @@ func opMstore8(interp *Interpreter) {
 	s.top -= 2
 	offsetVal := s.data[s.top+1]
 	value := s.data[s.top]
-	offset, ok := interp.asUsizeOrFail(offsetVal)
-	if !ok {
-		return
+	if offsetVal[1]|offsetVal[2]|offsetVal[3] == 0 {
+		offset := int(offsetVal[0])
+		if offset >= 0 && offset < interp.Memory.Len() {
+			(*interp.Memory.buffer)[interp.Memory.checkpoint+offset] = byte(value[0])
+		} else if interp.ResizeMemory(offset, 1) {
+			(*interp.Memory.buffer)[interp.Memory.checkpoint+offset] = byte(value[0])
+		}
+	} else {
+		interp.Halt(InstructionResultInvalidOperandOOG)
 	}
-	if !interp.ResizeMemory(offset, 1) {
-		return
-	}
-	interp.Memory.SetByte(offset, byte(value.Uint64()))
 }
 
 // opSload — Custom flush handler (needs Host).
