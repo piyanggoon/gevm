@@ -95,10 +95,11 @@ func opCalldatacopy(interp *Interpreter) {
 	memOffsetVal := s.data[s.top+2]
 	dataOffsetVal := s.data[s.top+1]
 	lenVal := s.data[s.top]
-	length, ok := interp.asUsizeOrFail(lenVal)
-	if !ok {
+	if lenVal[1]|lenVal[2]|lenVal[3] != 0 || lenVal[0] > uint64(maxInt) {
+		interp.Halt(InstructionResultInvalidOperandOOG)
 		return
 	}
+	length := int(lenVal[0])
 	cost := interp.GasParams.CopyCost(uint64(length))
 	if !interp.Gas.RecordCost(cost) {
 		interp.HaltOOG()
@@ -107,22 +108,43 @@ func opCalldatacopy(interp *Interpreter) {
 	if length == 0 {
 		return
 	}
-	memOffset, ok := interp.asUsizeOrFail(memOffsetVal)
-	if !ok {
+	if memOffsetVal[1]|memOffsetVal[2]|memOffsetVal[3] != 0 || memOffsetVal[0] > uint64(maxInt) {
+		interp.Halt(InstructionResultInvalidOperandOOG)
 		return
 	}
+	memOffset := int(memOffsetVal[0])
 	if !interp.ResizeMemory(memOffset, length) {
 		return
 	}
-	dataOffsetSat, overflow := dataOffsetVal.Uint64WithOverflow()
-	if overflow {
-		dataOffsetSat = ^uint64(0)
+	dataOffset := maxInt
+	if dataOffsetVal[1]|dataOffsetVal[2]|dataOffsetVal[3] == 0 && dataOffsetVal[0] <= uint64(maxInt) {
+		dataOffset = int(dataOffsetVal[0])
 	}
-	dataOffset := int(dataOffsetSat)
-	if dataOffsetSat > uint64(maxInt) {
-		dataOffset = maxInt
+	copyPaddedToMemory(interp.Memory, memOffset, dataOffset, length, interp.Input.Input)
+}
+
+func copyPaddedToMemory(memory *Memory, memoryOffset, dataOffset, length int, data []byte) {
+	dst := (*memory.buffer)[memory.checkpoint+memoryOffset : memory.checkpoint+memoryOffset+length]
+	if dataOffset < 0 || dataOffset >= len(data) {
+		clear(dst)
+		return
 	}
-	interp.Memory.SetData(memOffset, dataOffset, length, interp.Input.Input)
+	srcEnd := dataOffset + length
+	if srcEnd > len(data) {
+		srcEnd = len(data)
+	}
+	srcLen := srcEnd - dataOffset
+	copy(dst[:srcLen], data[dataOffset:srcEnd])
+	if srcLen < length {
+		clear(dst[srcLen:])
+	}
+}
+
+func saturatedU256ToInt(v uint256.Int) int {
+	if v[1]|v[2]|v[3] != 0 || v[0] > uint64(maxInt) {
+		return maxInt
+	}
+	return int(v[0])
 }
 
 // opCodesize — PushVal body.
@@ -143,10 +165,11 @@ func opCodecopy(interp *Interpreter) {
 	memOffsetVal := s.data[s.top+2]
 	codeOffsetVal := s.data[s.top+1]
 	lenVal := s.data[s.top]
-	length, ok := interp.asUsizeOrFail(lenVal)
-	if !ok {
+	if lenVal[1]|lenVal[2]|lenVal[3] != 0 || lenVal[0] > uint64(maxInt) {
+		interp.Halt(InstructionResultInvalidOperandOOG)
 		return
 	}
+	length := int(lenVal[0])
 	cost := interp.GasParams.CopyCost(uint64(length))
 	if !interp.Gas.RecordCost(cost) {
 		interp.HaltOOG()
@@ -155,22 +178,16 @@ func opCodecopy(interp *Interpreter) {
 	if length == 0 {
 		return
 	}
-	memOffset, ok := interp.asUsizeOrFail(memOffsetVal)
-	if !ok {
+	if memOffsetVal[1]|memOffsetVal[2]|memOffsetVal[3] != 0 || memOffsetVal[0] > uint64(maxInt) {
+		interp.Halt(InstructionResultInvalidOperandOOG)
 		return
 	}
+	memOffset := int(memOffsetVal[0])
 	if !interp.ResizeMemory(memOffset, length) {
 		return
 	}
-	codeOffsetSat, overflow := codeOffsetVal.Uint64WithOverflow()
-	if overflow {
-		codeOffsetSat = ^uint64(0)
-	}
-	codeOffset := int(codeOffsetSat)
-	if codeOffsetSat > uint64(maxInt) {
-		codeOffset = maxInt
-	}
-	interp.Memory.SetData(memOffset, codeOffset, length, interp.Bytecode.code[:interp.Bytecode.originalLen])
+	codeOffset := saturatedU256ToInt(codeOffsetVal)
+	copyPaddedToMemory(interp.Memory, memOffset, codeOffset, length, interp.Bytecode.code[:interp.Bytecode.originalLen])
 }
 
 // opGasprice — PushVal body (needs Host).
@@ -213,10 +230,11 @@ func opExtcodecopy(interp *Interpreter, host Host) {
 	codeOffsetVal := s.data[s.top+1]
 	lenVal := s.data[s.top]
 	addr := types.Address(addrVal.Bytes20())
-	length, ok := interp.asUsizeOrFail(lenVal)
-	if !ok {
+	if lenVal[1]|lenVal[2]|lenVal[3] != 0 || lenVal[0] > uint64(maxInt) {
+		interp.Halt(InstructionResultInvalidOperandOOG)
 		return
 	}
+	length := int(lenVal[0])
 	code, isCold := host.Code(addr)
 	if interp.RuntimeFlag.ForkID.IsEnabledIn(spec.Berlin) && isCold {
 		cost := interp.GasParams.ColdAccountAdditionalCost()
@@ -233,22 +251,16 @@ func opExtcodecopy(interp *Interpreter, host Host) {
 	if length == 0 {
 		return
 	}
-	memOffset, ok := interp.asUsizeOrFail(memOffsetVal)
-	if !ok {
+	if memOffsetVal[1]|memOffsetVal[2]|memOffsetVal[3] != 0 || memOffsetVal[0] > uint64(maxInt) {
+		interp.Halt(InstructionResultInvalidOperandOOG)
 		return
 	}
+	memOffset := int(memOffsetVal[0])
 	if !interp.ResizeMemory(memOffset, length) {
 		return
 	}
-	codeOffsetSat, overflow := codeOffsetVal.Uint64WithOverflow()
-	if overflow {
-		codeOffsetSat = ^uint64(0)
-	}
-	codeOffset := int(codeOffsetSat)
-	if codeOffsetSat > uint64(maxInt) {
-		codeOffset = maxInt
-	}
-	interp.Memory.SetData(memOffset, codeOffset, length, code)
+	codeOffset := saturatedU256ToInt(codeOffsetVal)
+	copyPaddedToMemory(interp.Memory, memOffset, codeOffset, length, code)
 }
 
 // opReturndatasize — PushVal body.
@@ -269,14 +281,16 @@ func opReturndatacopy(interp *Interpreter) {
 	memOffsetVal := s.data[s.top+2]
 	dataOffsetVal := s.data[s.top+1]
 	lenVal := s.data[s.top]
-	length, ok := interp.asUsizeOrFail(lenVal)
-	if !ok {
+	if lenVal[1]|lenVal[2]|lenVal[3] != 0 || lenVal[0] > uint64(maxInt) {
+		interp.Halt(InstructionResultInvalidOperandOOG)
 		return
 	}
-	dataOffset, ok := interp.asUsizeOrFail(dataOffsetVal)
-	if !ok {
+	length := int(lenVal[0])
+	if dataOffsetVal[1]|dataOffsetVal[2]|dataOffsetVal[3] != 0 || dataOffsetVal[0] > uint64(maxInt) {
+		interp.Halt(InstructionResultInvalidOperandOOG)
 		return
 	}
+	dataOffset := int(dataOffsetVal[0])
 	end := dataOffset + length
 	if end < dataOffset || end > len(interp.ReturnData) {
 		interp.Halt(InstructionResultOutOfOffset)
@@ -290,14 +304,15 @@ func opReturndatacopy(interp *Interpreter) {
 	if length == 0 {
 		return
 	}
-	memOffset, ok := interp.asUsizeOrFail(memOffsetVal)
-	if !ok {
+	if memOffsetVal[1]|memOffsetVal[2]|memOffsetVal[3] != 0 || memOffsetVal[0] > uint64(maxInt) {
+		interp.Halt(InstructionResultInvalidOperandOOG)
 		return
 	}
+	memOffset := int(memOffsetVal[0])
 	if !interp.ResizeMemory(memOffset, length) {
 		return
 	}
-	interp.Memory.Set(memOffset, interp.ReturnData[dataOffset:end])
+	copy((*interp.Memory.buffer)[interp.Memory.checkpoint+memOffset:], interp.ReturnData[dataOffset:end])
 }
 
 // opExtcodehash — Custom flush handler (needs Host). Fork gate (Constantinople) checked by generator.

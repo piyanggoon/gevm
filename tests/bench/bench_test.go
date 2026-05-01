@@ -80,10 +80,14 @@ func newBenchDB() *spectest.MemDB {
 // benchmarkCode runs a full Transact() benchmark against contractCode.
 // DB is created once and reused (Transact only modifies Journal state, not the DB).
 func benchmarkCode(b *testing.B, forkID spec.ForkID, gasLimit uint64, contractCode []byte) {
-	benchmarkCodeRunner(b, forkID, gasLimit, contractCode, nil)
+	benchmarkCodeWithInputRunner(b, forkID, gasLimit, contractCode, nil, nil)
 }
 
-func benchmarkCodeRunner(b *testing.B, forkID spec.ForkID, gasLimit uint64, contractCode []byte, runner vm.Runner) {
+func benchmarkCodeWithInput(b *testing.B, forkID spec.ForkID, gasLimit uint64, contractCode []byte, input []byte) {
+	benchmarkCodeWithInputRunner(b, forkID, gasLimit, contractCode, input, nil)
+}
+
+func benchmarkCodeWithInputRunner(b *testing.B, forkID spec.ForkID, gasLimit uint64, contractCode []byte, input []byte, runner vm.Runner) {
 	codeHash := types.Keccak256(contractCode)
 	block := blockEnvForSpec(forkID)
 	cfg := defaultCfgEnv()
@@ -106,6 +110,7 @@ func benchmarkCodeRunner(b *testing.B, forkID spec.ForkID, gasLimit uint64, cont
 			TxType:   host.TxTypeLegacy,
 			Caller:   benchCaller,
 			To:       benchContract,
+			Input:    input,
 			GasLimit: gasLimit,
 			GasPrice: *uint256.NewInt(1),
 		})
@@ -187,6 +192,34 @@ func returnContract(size uint64) []byte {
 	}
 	binary.BigEndian.PutUint64(code[1:], size)
 	return code
+}
+
+func copyLoop(op byte, length byte) []byte {
+	return opcodeLoop(
+		0x60, length, // PUSH1 length
+		0x60, 0x00, // PUSH1 source offset
+		0x60, 0x00, // PUSH1 destination offset
+		op,
+	)
+}
+
+func returnDataCopyLoop(length byte) []byte {
+	setup := []byte{
+		0x60, length, // PUSH1 retSize
+		0x60, 0x00, // PUSH1 retOffset
+		0x60, length, // PUSH1 argsSize
+		0x60, 0x00, // PUSH1 argsOffset
+		0x60, 0x04, // PUSH1 identity precompile
+		0x5A, // GAS
+		0xFA, // STATICCALL
+		0x50, // POP
+	}
+	return opcodeLoopWithSetup(setup,
+		0x60, length, // PUSH1 length
+		0x60, 0x00, // PUSH1 return-data offset
+		0x60, 0x00, // PUSH1 memory offset
+		0x3E, // RETURNDATACOPY
+	)
 }
 
 // SimpleLoop bytecodes (manually reconstructed from go-ethereum's program builder).
@@ -292,6 +325,25 @@ func BenchmarkRETURN(b *testing.B) {
 			benchmarkCode(b, spec.Cancun, 10_000_000, returnContract(size))
 		})
 	}
+}
+
+func BenchmarkDataMovement(b *testing.B) {
+	input := make([]byte, 32)
+	for i := range input {
+		input[i] = byte(i)
+	}
+	b.Run("CALLDATACOPY32", func(b *testing.B) {
+		benchmarkCodeWithInput(b, spec.Cancun, 10_000_000, copyLoop(0x37, 32), input)
+	})
+	b.Run("CODECOPY32", func(b *testing.B) {
+		benchmarkCode(b, spec.Cancun, 10_000_000, copyLoop(0x39, 32))
+	})
+	b.Run("RETURNDATACOPY32", func(b *testing.B) {
+		benchmarkCode(b, spec.Cancun, 10_000_000, returnDataCopyLoop(32))
+	})
+	b.Run("MCOPY32", func(b *testing.B) {
+		benchmarkCode(b, spec.Cancun, 10_000_000, copyLoop(0x5E, 32))
+	})
 }
 
 func BenchmarkSimpleLoop(b *testing.B) {

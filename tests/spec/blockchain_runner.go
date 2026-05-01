@@ -402,7 +402,7 @@ func executeSystemCall(evm *host.Evm, target types.Address, data []byte) {
 
 	// Warm the precompile addresses
 	for _, addr := range handler.Precompiles.WarmAddresses() {
-		evm.Journal.LoadAccount(addr)
+		_, _ = evm.Journal.LoadAccount(addr)
 	}
 
 	input := vm.NewFrameInputCall(vm.CallInputs{
@@ -430,7 +430,7 @@ func postBlockTransition(evm *host.Evm, block *BlockData, forkID gevmspec.ForkID
 	reward := blockReward(forkID)
 	if reward > 0 {
 		rewardU256 := *uint256.NewInt(reward)
-		evm.Journal.BalanceIncr(evm.Block.Beneficiary, rewardU256)
+		_ = evm.Journal.BalanceIncr(evm.Block.Beneficiary, rewardU256)
 	}
 
 	// Withdrawals (Shanghai+, EIP-4895)
@@ -441,7 +441,7 @@ func postBlockTransition(evm *host.Evm, block *BlockData, forkID gevmspec.ForkID
 			gweiU := *uint256.NewInt(oneGwei)
 			var amountWei uint256.Int
 			amountWei.Mul(&amountU, &gweiU)
-			evm.Journal.BalanceIncr(w.Address.V, amountWei)
+			_ = evm.Journal.BalanceIncr(w.Address.V, amountWei)
 		}
 	}
 

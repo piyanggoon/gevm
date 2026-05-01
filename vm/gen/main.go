@@ -762,8 +762,11 @@ func main() {
 	if err != nil {
 		// Write unformatted for debugging
 		debugPath := filepath.Join(vmDir, "table_gen_debug.go")
-		os.WriteFile(debugPath, buf.Bytes(), 0644)
-		fmt.Fprintf(os.Stderr, "format error: %v\nwrote unformatted to %s\n", err, debugPath)
+		if writeErr := os.WriteFile(debugPath, buf.Bytes(), 0644); writeErr != nil {
+			fmt.Fprintf(os.Stderr, "format error: %v\nfailed to write debug output to %s: %v\n", err, debugPath, writeErr)
+		} else {
+			fmt.Fprintf(os.Stderr, "format error: %v\nwrote unformatted to %s\n", err, debugPath)
+		}
 		os.Exit(1)
 	}
 

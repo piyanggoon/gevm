@@ -443,9 +443,9 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 
 	// Warm access list addresses and storage keys (EIP-2930+)
 	for _, item := range tx.AccessList {
-		evm.Journal.LoadAccount(item.Address)
+		_, _ = evm.Journal.LoadAccount(item.Address)
 		for _, key := range item.StorageKeys {
-			evm.Journal.SLoad(item.Address, key)
+			_, _ = evm.Journal.SLoad(item.Address, key)
 		}
 	}
 

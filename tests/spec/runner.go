@@ -491,10 +491,7 @@ func RecoverAddress(privKeyBytes []byte) (types.Address, error) {
 // skipTest returns true if the test file should be skipped.
 func skipTest(path string, cfg RunnerConfig) bool {
 	base := filepath.Base(path)
-	if cfg.SkipTests[base] {
-		return true
-	}
-	return false
+	return cfg.SkipTests[base]
 }
 
 // FindJSONTests recursively finds all .json files in a directory.

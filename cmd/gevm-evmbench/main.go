@@ -101,7 +101,7 @@ func main() {
 	var callerNonce uint64
 	for addr, acc := range evm.Journal.State {
 		var storage map[uint256.Int]uint256.Int
-		if acc.Storage != nil && len(acc.Storage) > 0 {
+		if len(acc.Storage) > 0 {
 			storage = make(map[uint256.Int]uint256.Int, len(acc.Storage))
 			for key, slot := range acc.Storage {
 				storage[key] = slot.PresentValue

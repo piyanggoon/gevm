@@ -1,0 +1,9 @@
+issues:
+  exclude-rules:
+    - path: ^vm/inst_.*\.go$
+      linters:
+        - unused
+    - path: ^precompiles/hash\.go$
+      linters:
+        - staticcheck
+      text: "SA1019"

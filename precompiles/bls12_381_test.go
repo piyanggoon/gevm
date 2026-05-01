@@ -6,19 +6,9 @@ import (
 
 	"github.com/Giulio2002/gevm/spec"
 	bls12381 "github.com/consensys/gnark-crypto/ecc/bls12-381"
-	"github.com/consensys/gnark-crypto/ecc/bls12-381/fp"
 )
 
 // --- Helper functions ---
-
-// makeG1Input creates a 128-byte padded G1 point input from x, y fp.Elements.
-func makeG1Input(x, y fp.Element) []byte {
-	var p bls12381.G1Affine
-	p.X = x
-	p.Y = y
-	encoded := encodeG1(&p)
-	return encoded[:]
-}
 
 // makeZeroG1Input returns 128 zero bytes (point at infinity).
 func makeZeroG1Input() []byte {

@@ -2,8 +2,9 @@ FIXTURES_DIR := $(CURDIR)/tests/fixtures/ethereum-tests
 EEST_DIR := $(CURDIR)/tests/fixtures/execution-spec-tests
 EEST_FIXTURES := $(EEST_DIR)/fixtures
 EEST_VERSION := v5.4.0
+GOLANGCI_LINT := $(shell command -v golangci-lint 2>/dev/null || printf "%s/bin/golangci-lint" "$$(go env GOPATH)")
 
-.PHONY: all test test-unit test-spec lint eest-fixtures
+.PHONY: all test test-unit test-spec lint download-lint eest-fixtures
 
 # Run all tests, including EEST fixtures.
 all: test
@@ -17,11 +18,15 @@ test-unit:
 
 # Run Go lint checks.
 lint:
-	@command -v golangci-lint >/dev/null || { \
-		echo "golangci-lint is not installed. Install it with: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest"; \
+	@test -x "$(GOLANGCI_LINT)" || { \
+		echo "golangci-lint is not installed. Run: make download-lint"; \
 		exit 1; \
 	}
-	golangci-lint run ./...
+	$(GOLANGCI_LINT) run ./...
+
+# Install golangci-lint into GOBIN or GOPATH/bin.
+download-lint:
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 
 # Run all ethereum spec fixture tests
 test-spec: eest-fixtures

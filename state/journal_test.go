@@ -628,12 +628,16 @@ func TestJournalSStoreNoChangeNoEntry(t *testing.T) {
 	j.State[a1].MarkWarmWithTransactionID(0)
 
 	// First SLoad to populate
-	j.SLoad(a1, u256(1))
+	if _, err := j.SLoad(a1, u256(1)); err != nil {
+		t.Fatal(err)
+	}
 
 	entriesBefore := len(j.Entries)
 
 	// SStore same value
-	j.SStore(a1, u256(1), u256(42))
+	if _, err := j.SStore(a1, u256(1), u256(42)); err != nil {
+		t.Fatal(err)
+	}
 
 	// Should only have the touch entry, no StorageChanged entry for same value
 	storageChanges := 0

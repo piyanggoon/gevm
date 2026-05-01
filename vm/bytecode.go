@@ -165,27 +165,6 @@ func NewBytecodeWithHash(code []byte, hash types.B256) *Bytecode {
 	return bc
 }
 
-// analyzeJumps builds the jump table by scanning for JUMPDEST (0x5b) opcodes.
-// It correctly skips over PUSH data.
-func (b *Bytecode) analyzeJumps() []byte {
-	tableLen := (b.originalLen + 7) / 8
-	table := make([]byte, tableLen)
-
-	i := 0
-	for i < b.originalLen {
-		op := b.code[i]
-		if op == 0x5b { // JUMPDEST
-			table[i/8] |= 1 << (uint(i) % 8)
-		}
-		// Skip PUSH data: opcodes 0x60-0x7f push 1-32 bytes.
-		if op >= 0x60 && op <= 0x7f {
-			i += int(op-0x60) + 1
-		}
-		i++
-	}
-	return table
-}
-
 // --- LoopControl ---
 
 // IsRunning returns true if execution should continue.

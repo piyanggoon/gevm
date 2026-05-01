@@ -31,22 +31,12 @@ func makeHandler(db state.Database, forkID spec.ForkID) (*Handler, *EvmHost) {
 // preloadAccount loads an account into the journal so it's warm and
 // available for TransferLoaded and other operations that assume pre-loading.
 func preloadAccount(host *EvmHost, address types.Address) {
-	host.Journal.LoadAccount(address)
+	_, _ = host.Journal.LoadAccount(address)
 }
 
 // bytecodeStop returns bytecode that just STOPs immediately.
 func bytecodeStop() []byte {
 	return []byte{opcode.STOP}
-}
-
-// bytecodeReturn returns bytecode: PUSH1 <len> PUSH1 <offset> RETURN
-// This returns `len` bytes starting at memory offset `offset`.
-func bytecodeReturn(offset, length byte) []byte {
-	return []byte{
-		opcode.PUSH1, length,
-		opcode.PUSH1, offset,
-		opcode.RETURN,
-	}
 }
 
 // bytecodeReturnValue returns bytecode that stores a single byte value in memory

@@ -125,9 +125,12 @@ func opSstore(interp *Interpreter, host Host) {
 	}
 	result := &interp.SStoreScratch
 	if interp.Journal != nil {
-		interp.Journal.SStoreInto(interp.Input.TargetAddress,
+		if err := interp.Journal.SStoreInto(interp.Input.TargetAddress,
 			&s.data[s.top+1], &s.data[s.top],
-			&result.OriginalValue, &result.PresentValue, &result.NewValue, &result.IsCold)
+			&result.OriginalValue, &result.PresentValue, &result.NewValue, &result.IsCold); err != nil {
+			interp.Halt(InstructionResultFatalExternalError)
+			return
+		}
 	} else {
 		host.SStore(interp.Input.TargetAddress, &s.data[s.top+1], &s.data[s.top], result)
 	}
@@ -152,10 +155,11 @@ func opMcopy(interp *Interpreter) {
 	dstVal := s.data[s.top+2]
 	srcVal := s.data[s.top+1]
 	lenVal := s.data[s.top]
-	length, ok := interp.asUsizeOrFail(lenVal)
-	if !ok {
+	if lenVal[1]|lenVal[2]|lenVal[3] != 0 || lenVal[0] > uint64(maxInt) {
+		interp.Halt(InstructionResultInvalidOperandOOG)
 		return
 	}
+	length := int(lenVal[0])
 	cost := interp.GasParams.McopyGas(uint64(length))
 	if !interp.Gas.RecordCost(cost) {
 		interp.HaltOOG()
@@ -164,14 +168,16 @@ func opMcopy(interp *Interpreter) {
 	if length == 0 {
 		return
 	}
-	dst, ok := interp.asUsizeOrFail(dstVal)
-	if !ok {
+	if dstVal[1]|dstVal[2]|dstVal[3] != 0 || dstVal[0] > uint64(maxInt) {
+		interp.Halt(InstructionResultInvalidOperandOOG)
 		return
 	}
-	src, ok := interp.asUsizeOrFail(srcVal)
-	if !ok {
+	dst := int(dstVal[0])
+	if srcVal[1]|srcVal[2]|srcVal[3] != 0 || srcVal[0] > uint64(maxInt) {
+		interp.Halt(InstructionResultInvalidOperandOOG)
 		return
 	}
+	src := int(srcVal[0])
 	maxOffset := dst
 	if src > maxOffset {
 		maxOffset = src

@@ -327,10 +327,8 @@ func TestCrossForkConsistency(t *testing.T) {
 		{"Prague", gevmspec.Prague},
 	}
 
-	// Simple ADD operation: 1 + 2 = 3, return result
-	code := hexBytes("6001600201600052602060006000F0") // ADD(1,2) then CREATE (simplify to just ADD/return)
-	// Actually use: PUSH1 1, PUSH1 2, ADD, PUSH1 0, MSTORE, PUSH1 32, PUSH1 0, RETURN
-	code = hexBytes("600160020160005260206000F3")
+	// PUSH1 1, PUSH1 2, ADD, PUSH1 0, MSTORE, PUSH1 32, PUSH1 0, RETURN.
+	code := hexBytes("600160020160005260206000F3")
 
 	var prevGas uint64
 	var prevOut []byte
