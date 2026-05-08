@@ -1,50 +1,71 @@
 package vm
 
 import (
-	"sync"
+	"sync/atomic"
+
+	lru "github.com/hashicorp/golang-lru/v2"
 
 	"github.com/Giulio2002/gevm/types"
 )
 
-const globalJumpDestCacheLimit = 32768
+// DefaultJumpDestCacheSize is the default capacity of the process-global
+// JUMPDEST bitmap cache. Sized for mainnet's hot contract set; tune via
+// ResizeGlobalJumpDestCache when embedding under different workloads.
+const DefaultJumpDestCacheSize = 32768
 
-var globalJumpDestCache = struct {
-	sync.RWMutex
-	items map[types.B256][]byte
-	order []types.B256
-	next  int
-}{
-	items: make(map[types.B256][]byte, globalJumpDestCacheLimit),
-	order: make([]types.B256, 0, globalJumpDestCacheLimit),
+var (
+	globalJumpDestCache *lru.Cache[types.B256, []byte]
+	jumpDestCacheOn     atomic.Bool
+)
+
+func init() {
+	cache, _ := lru.New[types.B256, []byte](DefaultJumpDestCacheSize)
+	globalJumpDestCache = cache
+	jumpDestCacheOn.Store(true)
 }
 
-func GetCachedJumpDest(hash types.B256) ([]byte, bool) {
-	globalJumpDestCache.RLock()
-	jt, ok := globalJumpDestCache.items[hash]
-	globalJumpDestCache.RUnlock()
-	return jt, ok
+// SetGlobalJumpDestCacheEnabled toggles the process-wide JUMPDEST cache.
+// When disabled, GetCachedJumpDest always returns (nil, false) and
+// PutCachedJumpDest is a no-op. Defaults to enabled.
+func SetGlobalJumpDestCacheEnabled(on bool) {
+	jumpDestCacheOn.Store(on)
 }
 
-func PutCachedJumpDest(hash types.B256, jt []byte) {
-	if len(jt) == 0 {
+// IsGlobalJumpDestCacheEnabled reports whether the JUMPDEST cache is
+// currently serving lookups.
+func IsGlobalJumpDestCacheEnabled() bool {
+	return jumpDestCacheOn.Load()
+}
+
+// ResizeGlobalJumpDestCache rebuilds the cache at a new capacity, dropping
+// any existing entries. size <= 0 is treated as DefaultJumpDestCacheSize.
+func ResizeGlobalJumpDestCache(size int) {
+	if size <= 0 {
+		size = DefaultJumpDestCacheSize
+	}
+	cache, _ := lru.New[types.B256, []byte](size)
+	globalJumpDestCache = cache
+}
+
+// PurgeGlobalJumpDestCache evicts every entry. Useful for benchmarks that
+// want a cold start without restarting the process.
+func PurgeGlobalJumpDestCache() {
+	globalJumpDestCache.Purge()
+}
+
+// GetCachedJumpDest returns the cached JUMPDEST bitmap for codeHash.
+func GetCachedJumpDest(codeHash types.B256) ([]byte, bool) {
+	if !jumpDestCacheOn.Load() {
+		return nil, false
+	}
+	return globalJumpDestCache.Get(codeHash)
+}
+
+// PutCachedJumpDest stores the JUMPDEST bitmap for codeHash. Empty bitmaps
+// are ignored. Eviction is LRU when capacity is reached.
+func PutCachedJumpDest(codeHash types.B256, bitmap []byte) {
+	if !jumpDestCacheOn.Load() || len(bitmap) == 0 {
 		return
 	}
-	globalJumpDestCache.Lock()
-	defer globalJumpDestCache.Unlock()
-	if _, ok := globalJumpDestCache.items[hash]; ok {
-		globalJumpDestCache.items[hash] = jt
-		return
-	}
-	if len(globalJumpDestCache.order) >= globalJumpDestCacheLimit {
-		evict := globalJumpDestCache.order[globalJumpDestCache.next]
-		globalJumpDestCache.order[globalJumpDestCache.next] = hash
-		delete(globalJumpDestCache.items, evict)
-		globalJumpDestCache.next++
-		if globalJumpDestCache.next == globalJumpDestCacheLimit {
-			globalJumpDestCache.next = 0
-		}
-	} else {
-		globalJumpDestCache.order = append(globalJumpDestCache.order, hash)
-	}
-	globalJumpDestCache.items[hash] = jt
+	globalJumpDestCache.Add(codeHash, bitmap)
 }
