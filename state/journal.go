@@ -45,6 +45,21 @@ func (w *WarmAddresses) SetAccessList(accessList map[types.Address]map[uint256.I
 	w.accessList = accessList
 }
 
+func (w *WarmAddresses) AddAccessListAddress(address types.Address) {
+	if _, ok := w.accessList[address]; !ok {
+		w.accessList[address] = nil
+	}
+}
+
+func (w *WarmAddresses) AddAccessListStorage(address types.Address, key uint256.Int) {
+	slots := w.accessList[address]
+	if slots == nil {
+		slots = make(map[uint256.Int]struct{})
+		w.accessList[address] = slots
+	}
+	slots[key] = struct{}{}
+}
+
 // AccessList returns the access list.
 func (w *WarmAddresses) AccessList() map[types.Address]map[uint256.Int]struct{} {
 	return w.accessList
@@ -88,7 +103,8 @@ type JournalCfg struct {
 
 // Journal tracks all state changes during EVM execution with revert capability.
 type Journal struct {
-	DB                      Database
+	DB                      any
+	ReaderOps               ReaderOps
 	State                   EvmState
 	TransientStorage        TransientStorage
 	Logs                    []Log
@@ -152,6 +168,7 @@ func (a *accountArena) reset() {
 		acc := &a.accounts[i]
 		acc.Info.Code = nil
 		acc.OriginalInfo.Code = nil
+		acc.BlockOriginalInfo.Code = nil
 		if acc.Storage != nil {
 			clear(acc.Storage)
 		}
@@ -190,7 +207,7 @@ func (a *slotArena) reset() {
 }
 
 // NewJournal creates a new Journal with the given database.
-func NewJournal(db Database) *Journal {
+func NewJournal(db any) *Journal {
 	return &Journal{
 		DB:               db,
 		State:            make(EvmState),
@@ -213,15 +230,17 @@ var journalPool = sync.Pool{
 }
 
 // AcquireJournal gets a Journal from the pool, reset and bound to db.
-func AcquireJournal(db Database) *Journal {
+func AcquireJournal(db any) *Journal {
 	j := journalPool.Get().(*Journal)
 	j.DB = db
+	j.ReaderOps = ReaderOps{}
 	return j
 }
 
 // ReleaseJournal returns a Journal to the pool after clearing state.
 func ReleaseJournal(j *Journal) {
 	j.DB = nil
+	j.ReaderOps = ReaderOps{}
 	// Delete state entries using tracked addresses (avoids map iteration).
 	for _, addr := range j.stateAddrs {
 		delete(j.State, addr)
@@ -290,6 +309,7 @@ func (j *Journal) CheckpointRevert(checkpoint JournalCheckpoint) {
 
 // CommitTx prepares for the next transaction.
 func (j *Journal) CommitTx() {
+	j.finalizeTxSelfdestructs()
 	clear(j.TransientStorage)
 	j.Depth = 0
 	j.Entries = j.Entries[:0]
@@ -297,6 +317,22 @@ func (j *Journal) CommitTx() {
 	j.TransactionID++
 	j.Logs = j.Logs[:0]
 	j.SelfdestructedAddresses = j.SelfdestructedAddresses[:0]
+}
+
+func (j *Journal) finalizeTxSelfdestructs() {
+	if len(j.SelfdestructedAddresses) == 0 {
+		return
+	}
+	for _, address := range j.SelfdestructedAddresses {
+		acc := j.State[address]
+		if acc == nil || !acc.IsSelfdestructedLocally() {
+			continue
+		}
+		acc.Selfdestruct()
+		acc.UnmarkSelfdestructedLocally()
+	}
+	j.cachedAcc = nil
+	j.slotCacheLen = 0
 }
 
 // DiscardTx discards the current transaction by reverting all journal entries.
@@ -338,13 +374,51 @@ func (j *Journal) TakeLogs() []Log {
 	return logs
 }
 
+// StateAddresses returns the block-journal account insertion order.
+func (j *Journal) StateAddresses() []types.Address {
+	return j.stateAddrs
+}
+
+func (j *Journal) PutAccount(address types.Address, info AccountInfo, storage map[uint256.Int]uint256.Int) {
+	acc, ok := j.State[address]
+	if !ok {
+		acc = j.accountArena.alloc()
+		j.State[address] = acc
+		j.stateAddrs = append(j.stateAddrs, address)
+	} else if acc.Storage != nil {
+		clear(acc.Storage)
+	}
+	acc.Info = info
+	acc.OriginalInfo = DefaultAccountInfo()
+	acc.BlockOriginalInfo = DefaultAccountInfo()
+	acc.TransactionID = j.TransactionID
+	acc.Status = AccountStatusCreated | AccountStatusTouched
+	if len(storage) > 0 {
+		acc.EnsureStorage()
+		for key, value := range storage {
+			acc.Storage[key] = NewEvmStorageSlotChanged(uint256.Int{}, value, j.TransactionID)
+		}
+	} else if acc.Storage == nil {
+		acc.Storage = make(EvmStorage)
+	}
+	j.cacheAccount(address, acc)
+}
+
 // --- Account Loading ---
 
 // touchAccount marks an account as touched if not already, and adds a journal entry.
 func (j *Journal) touchAccount(address types.Address, acc *Account) {
+	j.reviveSelfdestructedAccount(address, acc)
 	if !acc.IsTouched() {
 		j.Entries = append(j.Entries, JournalEntryAccountTouched(address))
 		acc.MarkTouch()
+	}
+}
+
+func (j *Journal) reviveSelfdestructedAccount(address types.Address, acc *Account) {
+	if acc.IsSelfdestructed() && !acc.IsSelfdestructedLocally() {
+		j.Entries = append(j.Entries, JournalEntrySelfdestructCleared(address))
+		acc.UnmarkSelfdestruct()
 	}
 }
 
@@ -424,6 +498,13 @@ func (j *Journal) Touch(address types.Address) {
 	}
 }
 
+func (j *Journal) ClearSelfdestruct(address types.Address) {
+	if acc, ok := j.stateAccount(address); ok {
+		acc.UnmarkSelfdestruct()
+		acc.UnmarkSelfdestructedLocally()
+	}
+}
+
 // LoadAccount loads an account into the journal state, marking it warm.
 // Returns the account and whether it was cold-loaded.
 func (j *Journal) LoadAccount(address types.Address) (StateLoad[*Account], error) {
@@ -450,8 +531,7 @@ func (j *Journal) loadAccountMutInternal(address types.Address) (*Account, bool,
 				acc.Selfdestruct()
 				acc.UnmarkSelfdestructedLocally()
 			}
-			// Set original info to current info.
-			acc.OriginalInfo = acc.Info.Clone()
+			acc.OriginalInfo = acc.Info
 			// Unmark locally created.
 			acc.UnmarkCreatedLocally()
 			// Journal loading of cold account.
@@ -464,24 +544,27 @@ func (j *Journal) loadAccountMutInternal(address types.Address) (*Account, bool,
 	isCold := !j.WarmAddresses.IsWarm(address)
 	acc := j.accountArena.alloc()
 	if j.DB != nil {
-		info, exists, err := j.DB.Basic(address)
+		info, exists, err := j.Basic(address)
 		if err != nil {
 			return nil, false, err
 		}
 		if exists {
 			acc.Info = info
 			acc.OriginalInfo = info // shallow copy; Code slice shared (safe: never mutated)
+			acc.BlockOriginalInfo = info
 			acc.TransactionID = j.TransactionID
 			acc.Status = 0
 		} else {
 			acc.Info = DefaultAccountInfo()
 			acc.OriginalInfo = DefaultAccountInfo()
+			acc.BlockOriginalInfo = DefaultAccountInfo()
 			acc.TransactionID = j.TransactionID
 			acc.Status = AccountStatusLoadedAsNotExist
 		}
 	} else {
 		acc.Info = DefaultAccountInfo()
 		acc.OriginalInfo = DefaultAccountInfo()
+		acc.BlockOriginalInfo = DefaultAccountInfo()
 		acc.TransactionID = j.TransactionID
 		acc.Status = AccountStatusLoadedAsNotExist
 	}
@@ -556,11 +639,10 @@ func (j *Journal) SLoadInto(address types.Address, key *uint256.Int, out *uint25
 		// Check if it's in the access list.
 		isCold = !j.WarmAddresses.IsStorageWarm(address, k)
 
-		// Load from DB if not newly created.
 		var value uint256.Int
-		if !isNewlyCreated && j.DB != nil {
+		if j.shouldLoadStorageFromDB(acc, isNewlyCreated) {
 			var err error
-			value, err = j.DB.Storage(address, k)
+			value, err = j.Storage(address, k)
 			if err != nil {
 				return false, err
 			}
@@ -568,6 +650,7 @@ func (j *Journal) SLoadInto(address types.Address, key *uint256.Int, out *uint25
 
 		slot = j.slotArena.allocSlot()
 		slot.OriginalValue = value
+		slot.BlockOriginalValue = value
 		slot.PresentValue = value
 		slot.TransactionID = j.TransactionID
 		slot.IsCold = false
@@ -676,9 +759,9 @@ func (j *Journal) sstoreInner(address types.Address, key *uint256.Int, newValue 
 			isCold = !j.WarmAddresses.IsStorageWarm(address, k)
 
 			var value uint256.Int
-			if !isNewlyCreated && j.DB != nil {
+			if j.shouldLoadStorageFromDB(acc, isNewlyCreated) {
 				var err error
-				value, err = j.DB.Storage(address, k)
+				value, err = j.Storage(address, k)
 				if err != nil {
 					return false, err
 				}
@@ -686,6 +769,7 @@ func (j *Journal) sstoreInner(address types.Address, key *uint256.Int, newValue 
 
 			slot = j.slotArena.allocSlot()
 			slot.OriginalValue = value
+			slot.BlockOriginalValue = value
 			slot.PresentValue = value
 			slot.TransactionID = j.TransactionID
 			slot.IsCold = false
@@ -712,6 +796,13 @@ func (j *Journal) sstoreInner(address types.Address, key *uint256.Int, newValue 
 	}
 
 	return isCold, nil
+}
+
+func (j *Journal) shouldLoadStorageFromDB(acc *Account, isNewlyCreated bool) bool {
+	if j.DB == nil || isNewlyCreated || acc.IsStorageCleared() {
+		return false
+	}
+	return !acc.IsSelfdestructed() || acc.IsSelfdestructedLocally()
 }
 
 // --- Transient Storage (EIP-1153) ---
@@ -863,7 +954,9 @@ func (j *Journal) Selfdestruct(address, target types.Address) (StateLoad[SelfDes
 
 	// EIP-6780: selfdestruct only if created in same tx (post-Cancun).
 	if acc.IsCreatedLocally() || !isCancunEnabled {
-		acc.MarkSelfdestructedLocally()
+		if acc.MarkSelfdestructedLocally() {
+			j.SelfdestructedAddresses = append(j.SelfdestructedAddresses, address)
+		}
 		acc.Info.Balance = uint256.Int{}
 		j.Entries = append(j.Entries, JournalEntryAccountDestroyed(address, target, destroyedStatus, balance))
 	} else if address != target {
@@ -932,6 +1025,9 @@ func (j *Journal) CreateAccountCheckpoint(caller, targetAddress types.Address, b
 // hasStorage checks if the account has any non-empty storage, checking
 // journal dirty slots first then falling back to the underlying DB.
 func (j *Journal) hasStorage(address types.Address, acc *Account) bool {
+	if acc.IsSelfdestructed() || acc.IsStorageCleared() {
+		return false
+	}
 	// Check dirty journal storage.
 	if acc.Storage != nil {
 		for _, slot := range acc.Storage {
@@ -942,7 +1038,7 @@ func (j *Journal) hasStorage(address types.Address, acc *Account) bool {
 	}
 	// Fall back to DB.
 	if j.DB != nil {
-		has, _ := j.DB.HasStorage(address)
+		has, _ := j.HasStorage(address)
 		return has
 	}
 	return false
@@ -954,9 +1050,13 @@ func (j *Journal) hasStorage(address types.Address, acc *Account) bool {
 func (j *Journal) SetCodeWithHash(address types.Address, code types.Bytes, hash types.B256) {
 	acc := j.State[address]
 	j.touchAccount(address, acc)
-	j.Entries = append(j.Entries, JournalEntryCodeChange(address))
+	j.Entries = append(j.Entries, JournalEntryCodeChange(address, acc.Info.CodeHash, acc.Info.Code))
 	acc.Info.CodeHash = hash
-	acc.Info.Code = code
+	if hash == types.KeccakEmpty || hash.IsZero() {
+		acc.Info.Code = nil
+	} else {
+		acc.Info.Code = types.BytesFrom(code)
+	}
 }
 
 // --- Balance Increment ---

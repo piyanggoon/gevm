@@ -33,6 +33,7 @@ const (
 	JournalStorageWarmed
 	JournalTransientStorageChange
 	JournalCodeChange
+	JournalSelfdestructCleared
 )
 
 // JournalEntry records a single state change that can be reverted.
@@ -64,6 +65,11 @@ type JournalEntry struct {
 	// PrevNonce stores the previous nonce value.
 	// Used by: NonceChange.
 	PrevNonce uint64
+
+	// PrevCodeHash and PrevCode store previous code metadata.
+	// Used by: CodeChange.
+	PrevCodeHash types.B256
+	PrevCode     types.Bytes
 
 	// DestroyedStatus tracks selfdestruct revert state.
 	// Used by: AccountDestroyed.
@@ -126,8 +132,12 @@ func JournalEntryTransientStorageChange(address types.Address, key, hadValue uin
 	return JournalEntry{Kind: JournalTransientStorageChange, Address: address, Key: key, HadValue: hadValue}
 }
 
-func JournalEntryCodeChange(address types.Address) JournalEntry {
-	return JournalEntry{Kind: JournalCodeChange, Address: address}
+func JournalEntryCodeChange(address types.Address, prevCodeHash types.B256, prevCode types.Bytes) JournalEntry {
+	return JournalEntry{Kind: JournalCodeChange, Address: address, PrevCodeHash: prevCodeHash, PrevCode: prevCode}
+}
+
+func JournalEntrySelfdestructCleared(address types.Address) JournalEntry {
+	return JournalEntry{Kind: JournalSelfdestructCleared, Address: address}
 }
 
 // Revert undoes the state change recorded by this journal entry.
@@ -209,7 +219,10 @@ func (e *JournalEntry) Revert(state EvmState, transientStorage TransientStorage,
 
 	case JournalCodeChange:
 		acc := state[e.Address]
-		acc.Info.CodeHash = types.KeccakEmpty
-		acc.Info.Code = nil
+		acc.Info.CodeHash = e.PrevCodeHash
+		acc.Info.Code = e.PrevCode
+
+	case JournalSelfdestructCleared:
+		state[e.Address].MarkSelfdestruct()
 	}
 }

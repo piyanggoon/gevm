@@ -130,6 +130,7 @@ type Evm struct {
 	Cfg            CfgEnv
 	ForkID         spec.ForkID
 	Runner         vm.Runner             // pluggable interpreter (nil = DefaultRunner)
+	Hooks          *vm.Hooks             // lifecycle hooks without per-opcode tracing
 	ReturnAlloc    vm.ReturnDataArena    // arena for pooling RETURN/REVERT output buffers
 	host           EvmHost               // reusable host embedded in pooled Evm (avoids heap escape)
 	JumpTableCache map[types.B256][]byte // cached JUMPDEST bitmaps, persists across pooled reuse
@@ -149,8 +150,13 @@ var evmPool = sync.Pool{
 
 // NewEvm creates a new Evm instance with pooled Journal and Evm struct.
 // Call ReleaseEvm() when done to return objects to pools.
-func NewEvm(db state.Database, forkID spec.ForkID, block BlockEnv, cfg CfgEnv) *Evm {
+func NewEvm(db any, forkID spec.ForkID, block BlockEnv, cfg CfgEnv) *Evm {
+	return NewEvmWithReaderOps(db, state.ReaderOps{}, forkID, block, cfg)
+}
+
+func NewEvmWithReaderOps(db any, readerOps state.ReaderOps, forkID spec.ForkID, block BlockEnv, cfg CfgEnv) *Evm {
 	journal := state.AcquireJournal(db)
+	journal.ReaderOps = readerOps
 	journal.SetForkID(forkID)
 	evm := evmPool.Get().(*Evm)
 	evm.Journal = journal
@@ -166,10 +172,15 @@ func (evm *Evm) Set(runner vm.Runner) {
 	evm.Runner = runner
 }
 
+func (evm *Evm) SetHooks(hooks *vm.Hooks) {
+	evm.Hooks = hooks
+}
+
 // ReleaseEvm returns the Evm and its Journal to their pools.
 func (evm *Evm) ReleaseEvm() {
 	evm.ReturnAlloc.Reset()
 	evm.Runner = nil
+	evm.Hooks = nil
 	if evm.Journal != nil {
 		state.ReleaseJournal(evm.Journal)
 		evm.Journal = nil
@@ -180,8 +191,18 @@ func (evm *Evm) ReleaseEvm() {
 // MaxInitCodeSize is the maximum initcode size (EIP-3860): 2 * MaxCodeSize.
 const MaxInitCodeSize = 2 * MaxCodeSize
 
-// Transact executes a transaction and returns the result.
 func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
+	return evm.transact(tx, true)
+}
+
+// TransactBorrowed executes a transaction and returns result slices owned by the Evm.
+// Callers must consume Output and Logs before the next transaction, CommitTx, or ReleaseEvm.
+func (evm *Evm) TransactBorrowed(tx *Transaction) ExecutionResult {
+	return evm.transact(tx, false)
+}
+
+// transact executes a transaction and returns the result.
+func (evm *Evm) transact(tx *Transaction, copyResult bool) ExecutionResult {
 	haltResult := func(reason vm.InstructionResult) ExecutionResult {
 		return ExecutionResult{
 			Kind:            ResultHalt,
@@ -190,6 +211,10 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 			ValidationError: true, // Pre-execution validation failure
 		}
 	}
+
+	evm.host.Block = &evm.Block
+	evm.host.Cfg = &evm.Cfg
+	evm.host.Journal = evm.Journal
 
 	// --- Phase 1: Validation ---
 
@@ -323,8 +348,14 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 
 	// EIP-3607: Reject transactions from senders with deployed code
 	// EIP-7702: allow senders with delegation code (0xef0100 || address)
-	if evm.ForkID.IsEnabledIn(spec.Shanghai) && len(callerAcc.Info.Code) > 0 && !IsEIP7702Bytecode(callerAcc.Info.Code) {
-		return haltResult(vm.InstructionResultSenderNotEOA)
+	if evm.ForkID.IsEnabledIn(spec.Shanghai) && callerAcc.Info.CodeHash != types.KeccakEmpty && !callerAcc.Info.CodeHash.IsZero() {
+		callerCode, err := evm.host.loadCode(tx.Caller, callerAcc)
+		if err != nil {
+			return haltResult(vm.InstructionResultFatalExternalError)
+		}
+		if len(callerCode) > 0 && !IsEIP7702Bytecode(callerCode) {
+			return haltResult(vm.InstructionResultSenderNotEOA)
+		}
 	}
 
 	// Nonce check
@@ -390,11 +421,7 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 	}
 
 	// Reuse host embedded in pooled Evm struct (no heap escape).
-	// Block and Cfg stored by pointer to avoid ~316 bytes of duffcopy.
-	evm.host.Block = &evm.Block
 	evm.host.Tx = TxEnv{Caller: tx.Caller, EffectiveGasPrice: effectiveGasPrice, BlobHashes: tx.BlobHashes}
-	evm.host.Cfg = &evm.Cfg
-	evm.host.Journal = evm.Journal
 
 	// Use embedded root memory (avoids memoryPool Get/Put).
 	vm.InitEmbeddedMemory(&evm.rootMemory)
@@ -413,6 +440,7 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 	precompileSet := precompiles.ForSpec(evm.ForkID)
 	evm.host.Precompiles = precompileSet
 	evm.host.DisablePrecompileFastPath = false
+	evm.host.Hooks = nil
 	handler := Handler{
 		Host:           &evm.host,
 		Precompiles:    precompileSet,
@@ -423,12 +451,12 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 		RootBytecode:   &evm.rootBytecode,
 		Runner:         runner,
 	}
-	// Extract lifecycle hooks from TracingRunner
-	if tr, ok := runner.(*vm.TracingRunner); ok {
+	if evm.Hooks != nil {
+		handler.hooks = evm.Hooks
+		evm.host.Hooks = evm.Hooks
+	} else if tr, ok := runner.(*vm.TracingRunner); ok {
 		handler.hooks = tr.Hooks
-		if tr.Hooks != nil && (tr.Hooks.OnEnter != nil || tr.Hooks.OnExit != nil) {
-			evm.host.DisablePrecompileFastPath = true
-		}
+		evm.host.Hooks = tr.Hooks
 	}
 
 	// Warm precompile addresses via shared map pointer (no Account objects created).
@@ -443,9 +471,9 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 
 	// Warm access list addresses and storage keys (EIP-2930+)
 	for _, item := range tx.AccessList {
-		_, _ = evm.Journal.LoadAccount(item.Address)
+		evm.Journal.WarmAddresses.AddAccessListAddress(item.Address)
 		for _, key := range item.StorageKeys {
-			_, _ = evm.Journal.SLoad(item.Address, key)
+			evm.Journal.WarmAddresses.AddAccessListStorage(item.Address, key)
 		}
 	}
 
@@ -541,30 +569,40 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 	reimburseGasU := uint256.Int{reimburseGas, 0, 0, 0}
 	var refundAmount uint256.Int
 	refundAmount.Mul(&effectiveGasPrice, &reimburseGasU)
-	callerReload, _ := evm.Journal.LoadAccount(tx.Caller)
-	callerReload.Data.Info.Balance.Add(&callerReload.Data.Info.Balance, &refundAmount)
+	if err := evm.Journal.BalanceIncr(tx.Caller, refundAmount); err != nil {
+		return haltResult(vm.InstructionResultFatalExternalError)
+	}
 
 	// Step 4: Reward beneficiary (coinbase).
 	// Uses gas.Used() = gas.Spent() - refunded (includes intrinsic gas).
 	evm.rewardBeneficiary(effectiveGasPrice, gas.Used())
 
-	// Build execution result. Copy Output and Logs so the result is safe
-	// to hold after ReleaseEvm (both alias pooled memory).
+	// Build execution result. Public Transact copies Output and Logs so
+	// the result is safe to hold after ReleaseEvm; TransactBorrowed keeps
+	// the Evm-owned slices for callers that consume the result immediately.
 	var output types.Bytes
 	if len(interpResult.Output) > 0 {
-		output = make(types.Bytes, len(interpResult.Output))
-		copy(output, interpResult.Output)
+		if copyResult {
+			output = make(types.Bytes, len(interpResult.Output))
+			copy(output, interpResult.Output)
+		} else {
+			output = interpResult.Output
+		}
 	}
 	var logs []state.Log
 	if len(evm.Journal.Logs) > 0 {
-		logs = make([]state.Log, len(evm.Journal.Logs))
-		copy(logs, evm.Journal.Logs)
-		for i := range logs {
-			if len(logs[i].Data) > 0 {
-				data := make(types.Bytes, len(logs[i].Data))
-				copy(data, logs[i].Data)
-				logs[i].Data = data
+		if copyResult {
+			logs = make([]state.Log, len(evm.Journal.Logs))
+			copy(logs, evm.Journal.Logs)
+			for i := range logs {
+				if len(logs[i].Data) > 0 {
+					data := make(types.Bytes, len(logs[i].Data))
+					copy(data, logs[i].Data)
+					logs[i].Data = data
+				}
 			}
+		} else {
+			logs = evm.Journal.Logs
 		}
 	}
 	result := ExecutionResult{
@@ -705,18 +743,16 @@ func (evm *Evm) rewardBeneficiary(gasPrice uint256.Int, gasUsed uint64) {
 	var reward uint256.Int
 	reward.Mul(&effectivePrice, &gasUsedU)
 
-	// Skip loading the beneficiary account if reward is zero.
-	// LoadAccount without a subsequent touch has no observable state effect.
 	if reward.IsZero() {
+		load, err := evm.Journal.LoadAccount(evm.Block.Beneficiary)
+		if err == nil && !load.Data.IsLoadedAsNotExisting() {
+			evm.Journal.Touch(evm.Block.Beneficiary)
+		}
 		return
 	}
 
 	beneficiary := evm.Block.Beneficiary
-	beneficiaryResult, err := evm.Journal.LoadAccount(beneficiary)
-	if err != nil {
-		return
-	}
-	beneficiaryResult.Data.Info.Balance.Add(&beneficiaryResult.Data.Info.Balance, &reward)
+	_ = evm.Journal.BalanceIncr(beneficiary, reward)
 }
 
 // applyEIP7702AuthList processes the authorization list for EIP-7702 transactions.
@@ -751,8 +787,11 @@ func (evm *Evm) applyEIP7702AuthList(tx *Transaction) int64 {
 		acc := loadResult.Data
 
 		// 5. Authority code must be empty or already an EIP-7702 delegation
-		if len(acc.Info.Code) > 0 && !IsEIP7702Bytecode(acc.Info.Code) {
-			continue
+		if acc.Info.CodeHash != types.KeccakEmpty && !acc.Info.CodeHash.IsZero() {
+			code, err := evm.host.loadCode(authority, acc)
+			if err != nil || (len(code) > 0 && !IsEIP7702Bytecode(code)) {
+				continue
+			}
 		}
 
 		// 6. Nonce must match
@@ -785,9 +824,33 @@ func (evm *Evm) applyEIP7702AuthList(tx *Transaction) int64 {
 	return refund
 }
 
+var (
+	secp256k1N = *new(uint256.Int).SetBytes([]byte{
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe,
+		0xba, 0xae, 0xdc, 0xe6, 0xaf, 0x48, 0xa0, 0x3b,
+		0xbf, 0xd2, 0x5e, 0x8c, 0xd0, 0x36, 0x41, 0x41,
+	})
+	secp256k1HalfN = *new(uint256.Int).Rsh(&secp256k1N, 1)
+)
+
+func validEIP7702Signature(auth *Authorization) bool {
+	var r, s uint256.Int
+	r.SetBytes32(auth.R[:])
+	s.SetBytes32(auth.S[:])
+	if auth.YParity > 1 || r.IsZero() || s.IsZero() {
+		return false
+	}
+	return r.Lt(&secp256k1N) && s.Lt(&secp256k1N) && !s.Gt(&secp256k1HalfN)
+}
+
 // recoverEIP7702Authority recovers the authority address from an EIP-7702 authorization.
 // Signing hash: keccak256(0x05 || rlp([chain_id, address, nonce]))
 func recoverEIP7702Authority(auth *Authorization) (types.Address, bool) {
+	if !validEIP7702Signature(auth) {
+		return types.Address{}, false
+	}
+
 	// RLP encode [chain_id, address, nonce]
 	chainIdBytes := rlpEncodeU256Compact(auth.ChainId)
 	addrBytes := rlpEncodeFixedBytes(auth.Address[:])

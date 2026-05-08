@@ -102,6 +102,50 @@ func TestCalcIntrinsicGasPreIstanbul(t *testing.T) {
 	}
 }
 
+func TestCreate2RecreateAfterPreviousTxSelfdestructAndValueTouch(t *testing.T) {
+	db := newMockDB()
+	caller := addr(0x01)
+	factory := addr(0x20)
+	initCode := types.Bytes{
+		0x61, 0x00, 0x10, 0x60, 0x00, 0x81, 0x60, 0x0b, 0x82, 0x39, 0xf3,
+		0x34, 0x60, 0x00, 0x14, 0x60, 0x0c, 0x57, 0x34, 0x60, 0x00, 0x55, 0x00, 0x5b, 0x60, 0x00, 0xff,
+	}
+	runtimeCode := types.Bytes{0x34, 0x60, 0x00, 0x14, 0x60, 0x0c, 0x57, 0x34, 0x60, 0x00, 0x55, 0x00, 0x5b, 0x60, 0x00, 0xff}
+	factoryCode := types.Bytes{0x36, 0x60, 0x00, 0x60, 0x00, 0x37, 0x60, 0x00, 0x36, 0x60, 0x00, 0x60, 0x00, 0xf5}
+	child := types.Create2Address(factory, [32]byte{}, types.Keccak256(initCode))
+
+	db.accounts[caller] = &state.AccountInfo{Balance: u(1_000_000_000), CodeHash: types.KeccakEmpty}
+	db.accounts[factory] = &state.AccountInfo{Nonce: 1, Code: factoryCode}
+	evm := makeEvm(db, spec.Berlin, BlockEnv{GasLimit: u(1_000_000_000)})
+
+	for i, tx := range []Transaction{
+		{Kind: TxKindCall, Caller: caller, To: factory, Input: initCode, GasLimit: 100_000_000, GasPrice: u(1), Nonce: 0},
+		{Kind: TxKindCall, Caller: caller, To: child, GasLimit: 100_000_000, GasPrice: u(1), Nonce: 1},
+		{Kind: TxKindCall, Caller: caller, To: child, Value: u(1), GasLimit: 100_000_000, GasPrice: u(1), Nonce: 2},
+		{Kind: TxKindCall, Caller: caller, To: factory, Input: initCode, GasLimit: 100_000_000, GasPrice: u(1), Nonce: 3},
+	} {
+		result := evm.Transact(&tx)
+		evm.Journal.CommitTx()
+		if result.Kind != ResultSuccess {
+			t.Fatalf("tx %d failed: kind=%d reason=%v gas=%d", i, result.Kind, result.Reason, result.GasUsed)
+		}
+	}
+
+	childAcc := evm.Journal.State[child]
+	if childAcc == nil {
+		t.Fatal("child account missing")
+	}
+	if childAcc.Info.Nonce != 1 {
+		t.Fatalf("child nonce: got %d, want 1", childAcc.Info.Nonce)
+	}
+	if childAcc.Info.CodeHash != types.Keccak256(runtimeCode) {
+		t.Fatalf("child code hash: got %x, want recreated runtime hash", childAcc.Info.CodeHash)
+	}
+	if childAcc.Info.Balance != u(1) {
+		t.Fatalf("child balance: got %v, want 1", &childAcc.Info.Balance)
+	}
+}
+
 // --- Transact validation tests ---
 
 func TestTransactIntrinsicGasExceeded(t *testing.T) {

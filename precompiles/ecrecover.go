@@ -17,8 +17,13 @@ func EcRecoverRun(input []byte, gasLimit uint64) PrecompileResult {
 		return PrecompileErr(PrecompileErrorOutOfGas)
 	}
 
-	// Right-pad input to 128 bytes
-	input = RightPad(input, 128)
+	if len(input) < 128 {
+		var padded [128]byte
+		copy(padded[:], input)
+		input = padded[:]
+	} else {
+		input = input[:128]
+	}
 
 	// v must be a 32-byte big-endian integer equal to 27 or 28.
 	// Bytes [32..63] must all be zero, and byte [63] must be 27 or 28.

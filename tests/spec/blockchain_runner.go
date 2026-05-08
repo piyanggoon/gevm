@@ -542,7 +542,7 @@ func validatePostState(journal *state.Journal, expected map[HexAddr]*TestAccount
 			}
 			// If not in journal storage, check DB
 			if actual.IsZero() && journal.DB != nil {
-				dbVal, err := journal.DB.Storage(addr, slot)
+				dbVal, err := journal.Storage(addr, slot)
 				if err == nil {
 					actual = dbVal
 				}

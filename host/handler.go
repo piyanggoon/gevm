@@ -97,6 +97,13 @@ func (h *Handler) executeCall(inputs *vm.CallInputs, depth int, parentMem *vm.Me
 
 	// Check if the bytecode address is a precompile
 	if precompile := h.Precompiles.Get(inputs.BytecodeAddress); precompile != nil {
+		if err := h.touchPrecompileCall(inputs.BytecodeAddress, inputs.Scheme, forkID); err != nil {
+			h.Host.Journal.CheckpointRevert(checkpoint)
+			return vm.NewCallOutcome(
+				vm.NewInterpreterResult(vm.InstructionResultFatalExternalError, nil, vm.NewGas(inputs.GasLimit)),
+				inputs.ReturnMemoryOffset,
+			)
+		}
 		// OnEnter/OnExit for precompile calls
 		if h.hooks != nil && h.hooks.OnEnter != nil {
 			h.hooks.OnEnter(depth, callSchemeToOpcode(inputs.Scheme), inputs.Caller,
@@ -124,6 +131,11 @@ func (h *Handler) executeCall(inputs *vm.CallInputs, depth int, parentMem *vm.Me
 
 	// Empty code: return immediately with success
 	if len(code) == 0 {
+		if !forkID.IsEnabledIn(spec.SpuriousDragon) {
+			h.Host.Journal.Touch(inputs.TargetAddress)
+		} else if inputs.BytecodeAddress == inputs.TargetAddress && h.loadedAccountExists(inputs.BytecodeAddress) {
+			h.Host.Journal.Touch(inputs.BytecodeAddress)
+		}
 		// OnEnter/OnExit for empty-code calls (e.g. value transfers)
 		if h.hooks != nil && h.hooks.OnEnter != nil {
 			h.hooks.OnEnter(depth, callSchemeToOpcode(inputs.Scheme), inputs.Caller,
@@ -156,6 +168,15 @@ func (h *Handler) executeCall(inputs *vm.CallInputs, depth int, parentMem *vm.Me
 	if h.JumpTableCache != nil {
 		cachedJT = h.JumpTableCache[acl.CodeHash]
 	}
+	if cachedJT == nil {
+		if jt, ok := vm.GetCachedJumpDest(acl.CodeHash); ok {
+			cachedJT = jt
+			if h.JumpTableCache != nil {
+				h.JumpTableCache[acl.CodeHash] = jt
+			}
+		}
+	}
+	paddedCode, originalLen, hasPaddedCode := getCachedPaddedCode(acl.CodeHash)
 
 	// Use embedded objects at depth 0 (avoids 3 pool Get/Put round-trips).
 	var interp *vm.Interpreter
@@ -163,13 +184,21 @@ func (h *Handler) executeCall(inputs *vm.CallInputs, depth int, parentMem *vm.Me
 	var pooled bool
 	if depth == 0 && h.RootInterp != nil {
 		bc = h.RootBytecode
-		vm.ResetEmbeddedBytecodeWithHash(bc, code, acl.CodeHash, cachedJT)
+		if hasPaddedCode {
+			vm.ResetEmbeddedBorrowedBytecodeWithHash(bc, paddedCode, originalLen, acl.CodeHash, cachedJT)
+		} else {
+			vm.ResetEmbeddedBytecodeWithHash(bc, code, acl.CodeHash, cachedJT)
+		}
 		interp = h.RootInterp
 		interp.Clear(childMem, bc, interpInput, inputs.IsStatic, forkID, inputs.GasLimit)
 		interp.ReturnAlloc = h.ReturnAlloc
 		interp.Journal = h.Host.Journal
 	} else {
-		bc = vm.AcquireBytecodeWithHash(code, acl.CodeHash, cachedJT)
+		if hasPaddedCode {
+			bc = vm.AcquireBorrowedBytecodeWithHash(paddedCode, originalLen, acl.CodeHash, cachedJT)
+		} else {
+			bc = vm.AcquireBytecodeWithHash(code, acl.CodeHash, cachedJT)
+		}
 		interp = vm.AcquireInterpreter(
 			childMem,
 			bc,
@@ -199,9 +228,10 @@ func (h *Handler) executeCall(inputs *vm.CallInputs, depth int, parentMem *vm.Me
 	result := interp.InterpreterResultFromHalt()
 
 	// Cache the jump table for reuse by future calls to the same contract
-	if h.JumpTableCache != nil {
+	if cachedJT == nil && h.JumpTableCache != nil {
 		if jt := bc.GetJumpTable(); jt != nil {
 			h.JumpTableCache[acl.CodeHash] = jt
+			vm.PutCachedJumpDest(acl.CodeHash, jt)
 		}
 	}
 
@@ -226,6 +256,15 @@ func (h *Handler) executeCall(inputs *vm.CallInputs, depth int, parentMem *vm.Me
 	}
 
 	return vm.NewCallOutcome(result, inputs.ReturnMemoryOffset)
+}
+
+func (h *Handler) loadedAccountExists(address types.Address) bool {
+	acc := h.loadedAccount(address)
+	return acc != nil && !acc.IsLoadedAsNotExisting()
+}
+
+func (h *Handler) loadedAccount(address types.Address) *state.Account {
+	return h.Host.Journal.State[address]
 }
 
 // executePrecompile runs a precompile contract and returns the call outcome.
@@ -372,6 +411,7 @@ func (h *Handler) executeCreate(inputs *vm.CreateInputs, depth int, parentMem *v
 				createdAddress, inputs.InitCode, inputs.GasLimit, inputs.Value)
 		}
 		h.Host.Journal.CheckpointCommit()
+		h.Host.Journal.ClearSelfdestruct(createdAddress)
 		addr := createdAddress
 		outcome := vm.NewCreateOutcome(
 			vm.NewInterpreterResult(vm.InstructionResultStop, nil, vm.NewGas(inputs.GasLimit)),
@@ -482,6 +522,9 @@ func (h *Handler) returnCreate(
 
 	// Commit and store code
 	h.Host.Journal.CheckpointCommit()
+	if result.Result != vm.InstructionResultSelfDestruct {
+		h.Host.Journal.ClearSelfdestruct(createdAddress)
+	}
 	if len(output) > 0 {
 		codeHash := types.Keccak256(output)
 		h.Host.Journal.SetCodeWithHash(createdAddress, output, codeHash)
@@ -546,12 +589,22 @@ func (h *Handler) tryHandlePrecompileCall(interp *vm.Interpreter, depth int) boo
 		return true
 	}
 
+	checkpoint := h.Host.Journal.Checkpoint()
+	if err := h.touchPrecompileCall(inputs.BytecodeAddress, inputs.Scheme, h.Host.Journal.Cfg.Spec); err != nil {
+		h.Host.Journal.CheckpointRevert(checkpoint)
+		h.handleCallReturn(interp, vm.NewCallOutcome(
+			vm.NewInterpreterResult(vm.InstructionResultFatalExternalError, nil, vm.NewGas(inputs.GasLimit)),
+			inputs.ReturnMemoryOffset,
+		))
+		return true
+	}
+
 	if h.hooks != nil && h.hooks.OnEnter != nil {
 		h.hooks.OnEnter(depth, callSchemeToOpcode(inputs.Scheme), inputs.Caller,
 			inputs.BytecodeAddress, inputs.Input, inputs.GasLimit, inputs.Value.Value)
 	}
 
-	outcome := executePrecompileNoState(precompile, inputs.Input, inputs.GasLimit, inputs.ReturnMemoryOffset)
+	outcome := h.executePrecompile(precompile, inputs.Input, inputs.GasLimit, inputs.ReturnMemoryOffset, checkpoint)
 	if h.hooks != nil && h.hooks.OnExit != nil {
 		gasUsed := inputs.GasLimit - outcome.Result.Gas.Remaining()
 		h.hooks.OnExit(depth, outcome.Result.Output, gasUsed,
@@ -559,6 +612,28 @@ func (h *Handler) tryHandlePrecompileCall(interp *vm.Interpreter, depth int) boo
 	}
 	h.handleCallReturn(interp, outcome)
 	return true
+}
+
+func (h *Handler) touchPrecompileCall(address types.Address, scheme vm.CallScheme, forkID spec.ForkID) error {
+	if forkID.IsEnabledIn(spec.SpuriousDragon) {
+		if scheme != vm.CallSchemeCall && scheme != vm.CallSchemeStaticCall {
+			return nil
+		}
+		load, err := h.Host.Journal.LoadAccount(address)
+		if err != nil {
+			return err
+		}
+		if load.Data.IsLoadedAsNotExisting() {
+			return nil
+		}
+		h.Host.Journal.Touch(address)
+		return nil
+	}
+	if _, err := h.Host.Journal.LoadAccount(address); err != nil {
+		return err
+	}
+	h.Host.Journal.Touch(address)
+	return nil
 }
 
 func executePrecompileNoState(

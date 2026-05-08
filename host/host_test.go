@@ -28,10 +28,26 @@ func (db *mockDB) Basic(address types.Address) (state.AccountInfo, bool, error) 
 	if !ok {
 		return state.AccountInfo{}, false, nil
 	}
-	return *info, true, nil
+	out := *info
+	if len(out.Code) > 0 && (out.CodeHash == types.KeccakEmpty || out.CodeHash.IsZero()) {
+		out.CodeHash = types.Keccak256(out.Code)
+	}
+	return out, true, nil
 }
 
 func (db *mockDB) CodeByHash(codeHash types.B256) (types.Bytes, error) {
+	for _, info := range db.accounts {
+		if len(info.Code) == 0 {
+			continue
+		}
+		hash := info.CodeHash
+		if hash == types.KeccakEmpty || hash.IsZero() {
+			hash = types.Keccak256(info.Code)
+		}
+		if hash == codeHash {
+			return info.Code, nil
+		}
+	}
 	return nil, nil
 }
 
@@ -239,7 +255,7 @@ func TestEvmHostTransientStorage(t *testing.T) {
 func TestEvmHostBlockHash(t *testing.T) {
 	db := newMockDB()
 	journal := state.NewJournal(db)
-	host := NewEvmHost(journal, &BlockEnv{}, TxEnv{}, &CfgEnv{})
+	host := NewEvmHost(journal, &BlockEnv{Number: u(10)}, TxEnv{}, &CfgEnv{})
 
 	hash := host.BlockHash(u(5))
 	expected := types.B256{5}

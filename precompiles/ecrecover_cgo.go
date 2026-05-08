@@ -1,10 +1,10 @@
-//go:build ignore
+//go:build cgo
 
 package precompiles
 
 import (
 	keccak "github.com/Giulio2002/fastkeccak"
-	"github.com/Giulio2002/gevm/internal/secp256k1"
+	"github.com/erigontech/secp256k1"
 )
 
 // Ecrecover performs secp256k1 ECDSA recovery using libsecp256k1 (CGO).
@@ -17,7 +17,8 @@ func Ecrecover(sig [64]byte, recid byte, msgHash [32]byte) ([32]byte, bool) {
 	copy(sig65[0:64], sig[:])
 	sig65[64] = recid
 
-	pubkey, err := secp256k1.RecoverPubkey(msgHash[:], sig65[:])
+	var pubkeyBuf [65]byte
+	pubkey, err := secp256k1.RecoverPubkeyWithContext(secp256k1.DefaultContext, msgHash[:], sig65[:], pubkeyBuf[:0])
 	if err != nil {
 		return result, false
 	}
