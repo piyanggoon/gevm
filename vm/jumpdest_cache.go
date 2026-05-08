@@ -8,10 +8,10 @@ import (
 	"github.com/Giulio2002/gevm/types"
 )
 
-// DefaultJumpDestCacheSize is the default capacity of the process-global
+// jumpDestCacheSize is the default capacity of the process-global
 // JUMPDEST bitmap cache. Sized for mainnet's hot contract set; tune via
 // ResizeGlobalJumpDestCache when embedding under different workloads.
-const DefaultJumpDestCacheSize = 32768
+const jumpDestCacheSize = 32768
 
 var (
 	globalJumpDestCache *lru.Cache[types.B256, []byte]
@@ -19,7 +19,7 @@ var (
 )
 
 func init() {
-	cache, _ := lru.New[types.B256, []byte](DefaultJumpDestCacheSize)
+	cache, _ := lru.New[types.B256, []byte](jumpDestCacheSize)
 	globalJumpDestCache = cache
 	jumpDestCacheOn.Store(true)
 }
@@ -38,10 +38,10 @@ func IsGlobalJumpDestCacheEnabled() bool {
 }
 
 // ResizeGlobalJumpDestCache rebuilds the cache at a new capacity, dropping
-// any existing entries. size <= 0 is treated as DefaultJumpDestCacheSize.
+// any existing entries. size <= 0 is treated as jumpDestCacheSize.
 func ResizeGlobalJumpDestCache(size int) {
 	if size <= 0 {
-		size = DefaultJumpDestCacheSize
+		size = jumpDestCacheSize
 	}
 	cache, _ := lru.New[types.B256, []byte](size)
 	globalJumpDestCache = cache
