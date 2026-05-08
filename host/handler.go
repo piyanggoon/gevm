@@ -176,29 +176,19 @@ func (h *Handler) executeCall(inputs *vm.CallInputs, depth int, parentMem *vm.Me
 			}
 		}
 	}
-	paddedCode, originalLen, hasPaddedCode := getCachedPaddedCode(acl.CodeHash)
-
 	// Use embedded objects at depth 0 (avoids 3 pool Get/Put round-trips).
 	var interp *vm.Interpreter
 	var bc *vm.Bytecode
 	var pooled bool
 	if depth == 0 && h.RootInterp != nil {
 		bc = h.RootBytecode
-		if hasPaddedCode {
-			vm.ResetEmbeddedBorrowedBytecodeWithHash(bc, paddedCode, originalLen, acl.CodeHash, cachedJT)
-		} else {
-			vm.ResetEmbeddedBytecodeWithHash(bc, code, acl.CodeHash, cachedJT)
-		}
+		vm.ResetEmbeddedBytecodeWithHash(bc, code, acl.CodeHash, cachedJT)
 		interp = h.RootInterp
 		interp.Clear(childMem, bc, interpInput, inputs.IsStatic, forkID, inputs.GasLimit)
 		interp.ReturnAlloc = h.ReturnAlloc
 		interp.Journal = h.Host.Journal
 	} else {
-		if hasPaddedCode {
-			bc = vm.AcquireBorrowedBytecodeWithHash(paddedCode, originalLen, acl.CodeHash, cachedJT)
-		} else {
-			bc = vm.AcquireBytecodeWithHash(code, acl.CodeHash, cachedJT)
-		}
+		bc = vm.AcquireBytecodeWithHash(code, acl.CodeHash, cachedJT)
 		interp = vm.AcquireInterpreter(
 			childMem,
 			bc,

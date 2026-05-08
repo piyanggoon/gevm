@@ -161,15 +161,10 @@ func (h *EvmHost) loadCode(addr types.Address, acc *state.Account) (types.Bytes,
 	if acc.Info.Code != nil {
 		return acc.Info.Code, nil
 	}
-	if code, ok := getCachedCode(acc.Info.CodeHash); ok {
-		acc.Info.Code = code
-		return code, nil
-	}
 	code, err := h.Journal.ReadCode(addr)
 	if err != nil {
 		return nil, err
 	}
-	putCachedCode(acc.Info.CodeHash, code)
 	acc.Info.Code = code
 	return code, nil
 }
