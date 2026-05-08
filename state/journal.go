@@ -103,8 +103,7 @@ type JournalCfg struct {
 
 // Journal tracks all state changes during EVM execution with revert capability.
 type Journal struct {
-	DB                      any
-	ReaderOps               ReaderOps
+	DB                      Database
 	State                   EvmState
 	TransientStorage        TransientStorage
 	Logs                    []Log
@@ -207,7 +206,7 @@ func (a *slotArena) reset() {
 }
 
 // NewJournal creates a new Journal with the given database.
-func NewJournal(db any) *Journal {
+func NewJournal(db Database) *Journal {
 	return &Journal{
 		DB:               db,
 		State:            make(EvmState),
@@ -230,17 +229,15 @@ var journalPool = sync.Pool{
 }
 
 // AcquireJournal gets a Journal from the pool, reset and bound to db.
-func AcquireJournal(db any) *Journal {
+func AcquireJournal(db Database) *Journal {
 	j := journalPool.Get().(*Journal)
 	j.DB = db
-	j.ReaderOps = ReaderOps{}
 	return j
 }
 
 // ReleaseJournal returns a Journal to the pool after clearing state.
 func ReleaseJournal(j *Journal) {
 	j.DB = nil
-	j.ReaderOps = ReaderOps{}
 	// Delete state entries using tracked addresses (avoids map iteration).
 	for _, addr := range j.stateAddrs {
 		delete(j.State, addr)

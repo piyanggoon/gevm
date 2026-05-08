@@ -33,6 +33,13 @@ func (db *mockDB) CodeByHash(codeHash types.B256) (types.Bytes, error) {
 	return nil, nil
 }
 
+func (db *mockDB) Code(address types.Address) (types.Bytes, error) {
+	if info, ok := db.accounts[address]; ok {
+		return info.Code, nil
+	}
+	return nil, nil
+}
+
 func (db *mockDB) Storage(address types.Address, index uint256.Int) (uint256.Int, error) {
 	if slots, ok := db.storage[address]; ok {
 		if val, found := slots[index]; found {

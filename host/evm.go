@@ -150,13 +150,8 @@ var evmPool = sync.Pool{
 
 // NewEvm creates a new Evm instance with pooled Journal and Evm struct.
 // Call ReleaseEvm() when done to return objects to pools.
-func NewEvm(db any, forkID spec.ForkID, block BlockEnv, cfg CfgEnv) *Evm {
-	return NewEvmWithReaderOps(db, state.ReaderOps{}, forkID, block, cfg)
-}
-
-func NewEvmWithReaderOps(db any, readerOps state.ReaderOps, forkID spec.ForkID, block BlockEnv, cfg CfgEnv) *Evm {
+func NewEvm(db state.Database, forkID spec.ForkID, block BlockEnv, cfg CfgEnv) *Evm {
 	journal := state.AcquireJournal(db)
-	journal.ReaderOps = readerOps
 	journal.SetForkID(forkID)
 	evm := evmPool.Get().(*Evm)
 	evm.Journal = journal

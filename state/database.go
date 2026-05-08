@@ -14,6 +14,9 @@ type Database interface {
 	// CodeByHash gets account code by its hash.
 	CodeByHash(codeHash types.B256) (types.Bytes, error)
 
+	// Code gets account code by address.
+	Code(address types.Address) (types.Bytes, error)
+
 	// Storage gets storage value of address at index.
 	Storage(address types.Address, index uint256.Int) (uint256.Int, error)
 

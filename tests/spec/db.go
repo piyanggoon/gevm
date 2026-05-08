@@ -64,6 +64,14 @@ func (db *MemDB) CodeByHash(codeHash types.B256) (types.Bytes, error) {
 	return nil, fmt.Errorf("code not found for hash %s", codeHash.Hex())
 }
 
+func (db *MemDB) Code(address types.Address) (types.Bytes, error) {
+	acc, ok := db.accounts[address]
+	if !ok {
+		return nil, nil
+	}
+	return acc.info.Code, nil
+}
+
 func (db *MemDB) Storage(address types.Address, index uint256.Int) (uint256.Int, error) {
 	acc, ok := db.accounts[address]
 	if !ok {
