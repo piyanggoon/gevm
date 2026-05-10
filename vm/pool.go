@@ -51,27 +51,6 @@ func (a *ReturnDataArena) Reset() {
 	a.bufs = a.bufs[:0]
 }
 
-// stackPool pools Stack objects (each ~32KB: 1024 × 32-byte uint256.Int words).
-var stackPool = sync.Pool{
-	New: func() any { return NewStack() },
-}
-
-// AcquireStack returns a Stack from the pool, ready for use.
-func AcquireStack() *Stack {
-	s := stackPool.Get().(*Stack)
-	s.Clear()
-	return s
-}
-
-// ReleaseStack returns a Stack to the pool.
-func ReleaseStack(s *Stack) {
-	if s == nil {
-		return
-	}
-	s.Clear()
-	stackPool.Put(s)
-}
-
 // interpreterPool pools Interpreter objects.
 var interpreterPool = sync.Pool{
 	New: func() any {

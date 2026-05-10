@@ -162,13 +162,6 @@ func (b *Bytecode) ensureJumpTable() {
 	}
 }
 
-// NewBytecodeWithHash creates a Bytecode with a precomputed hash.
-func NewBytecodeWithHash(code []byte, hash types.B256) *Bytecode {
-	bc := NewBytecode(code)
-	bc.hash = &hash
-	return bc
-}
-
 // --- LoopControl ---
 
 // IsRunning returns true if execution should continue.
