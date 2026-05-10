@@ -190,10 +190,26 @@ func (evm *Evm) Transact(tx *Transaction) ExecutionResult {
 	return evm.transact(tx, true)
 }
 
-// TransactBorrowed executes a transaction and returns result slices owned by the Evm.
-// Callers must consume Output and Logs before the next transaction, CommitTx, or ReleaseEvm.
-func (evm *Evm) TransactBorrowed(tx *Transaction) ExecutionResult {
-	return evm.transact(tx, false)
+// TransactInPlace executes a transaction, writing the result Output and Logs
+// into caller-provided buffers. Both buffers are truncated to zero length and
+// then appended to (growing if needed); the (possibly grown) buffers are
+// returned for the caller to reuse on the next call.
+//
+// The slices in each returned Log's Data field are still BORROWED from
+// Evm-owned storage — the caller must consume them before the next
+// Transact / TransactInPlace / CommitTx / ReleaseEvm call. To detach Log.Data
+// from Evm storage, use Transact (which deep-copies).
+//
+// Use this in batch execution paths (block runners, EEST replay) where the
+// caller persists output + logs immediately after each tx and would otherwise
+// pay the per-tx allocation cost of Transact's safe copies.
+func (evm *Evm) TransactInPlace(tx *Transaction, outBuf []byte, logsBuf []state.Log) (ExecutionResult, []byte, []state.Log) {
+	result := evm.transact(tx, false)
+	outBuf = append(outBuf[:0], result.Output...)
+	logsBuf = append(logsBuf[:0], result.Logs...)
+	result.Output = outBuf
+	result.Logs = logsBuf
+	return result, outBuf, logsBuf
 }
 
 // transact executes a transaction and returns the result.
@@ -573,8 +589,9 @@ func (evm *Evm) transact(tx *Transaction, copyResult bool) ExecutionResult {
 	evm.rewardBeneficiary(effectiveGasPrice, gas.Used())
 
 	// Build execution result. Public Transact copies Output and Logs so
-	// the result is safe to hold after ReleaseEvm; TransactBorrowed keeps
-	// the Evm-owned slices for callers that consume the result immediately.
+	// the result is safe to hold after ReleaseEvm; TransactInPlace runs
+	// this borrowed path and then re-points the result slices at
+	// caller-provided buffers.
 	var output types.Bytes
 	if len(interpResult.Output) > 0 {
 		if copyResult {
