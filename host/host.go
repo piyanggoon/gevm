@@ -21,6 +21,7 @@ type BlockEnv struct {
 	BaseFee      uint256.Int
 	BlobGasPrice uint256.Int
 	SlotNum      uint256.Int
+	GetHash      func(uint64) (types.B256, error)
 }
 
 // TxEnv holds transaction-level environment data.
@@ -47,6 +48,7 @@ type EvmHost struct {
 
 	Precompiles               *precompiles.PrecompileSet
 	DisablePrecompileFastPath bool
+	Hooks                     *vm.Hooks
 }
 
 // NewEvmHost creates a new EvmHost.
@@ -103,18 +105,11 @@ func (h *EvmHost) CodeSize(addr types.Address) (int, bool) {
 		return 0, false
 	}
 	acc := result.Data
-	if acc.Info.Code != nil {
-		return len(acc.Info.Code), result.IsCold
+	code, dbErr := h.loadCode(addr, acc)
+	if dbErr != nil {
+		return 0, false
 	}
-	// Code not loaded; load from DB
-	if h.Journal.DB != nil && acc.Info.CodeHash != types.KeccakEmpty {
-		code, dbErr := h.Journal.DB.CodeByHash(acc.Info.CodeHash)
-		if dbErr == nil {
-			acc.Info.Code = code
-			return len(code), result.IsCold
-		}
-	}
-	return 0, result.IsCold
+	return len(code), result.IsCold
 }
 
 func (h *EvmHost) CodeHash(addr types.Address) (types.B256, bool) {
@@ -135,18 +130,11 @@ func (h *EvmHost) Code(addr types.Address) (types.Bytes, bool) {
 		return nil, false
 	}
 	acc := result.Data
-	if acc.Info.Code != nil {
-		return acc.Info.Code, result.IsCold
+	code, dbErr := h.loadCode(addr, acc)
+	if dbErr != nil {
+		return nil, false
 	}
-	// Load from DB
-	if h.Journal.DB != nil && acc.Info.CodeHash != types.KeccakEmpty {
-		code, dbErr := h.Journal.DB.CodeByHash(acc.Info.CodeHash)
-		if dbErr == nil {
-			acc.Info.Code = code
-			return code, result.IsCold
-		}
-	}
-	return nil, result.IsCold
+	return code, result.IsCold
 }
 
 func (h *EvmHost) LoadAccountCode(addr types.Address) vm.AccountCodeLoad {
@@ -156,21 +144,29 @@ func (h *EvmHost) LoadAccountCode(addr types.Address) vm.AccountCodeLoad {
 	}
 	acc := result.Data
 	isEmpty := acc.StateClearAwareIsEmpty(h.Journal.Cfg.Spec)
-	// Load code if needed
-	code := acc.Info.Code
-	if code == nil && h.Journal.DB != nil && acc.Info.CodeHash != types.KeccakEmpty {
-		loaded, dbErr := h.Journal.DB.CodeByHash(acc.Info.CodeHash)
-		if dbErr == nil {
-			code = loaded
-			acc.Info.Code = code
-		}
-	}
+	code, _ := h.loadCode(addr, acc)
 	return vm.AccountCodeLoad{
 		Code:     code,
 		CodeHash: acc.Info.CodeHash,
 		IsCold:   result.IsCold,
 		IsEmpty:  isEmpty,
 	}
+}
+
+func (h *EvmHost) loadCode(addr types.Address, acc *state.Account) (types.Bytes, error) {
+	if acc.Info.CodeHash == types.KeccakEmpty || acc.Info.CodeHash.IsZero() {
+		acc.Info.Code = nil
+		return nil, nil
+	}
+	if acc.Info.Code != nil {
+		return acc.Info.Code, nil
+	}
+	code, err := h.Journal.ReadCode(addr)
+	if err != nil {
+		return nil, err
+	}
+	acc.Info.Code = code
+	return code, nil
 }
 
 // IsPrecompile returns true if addr is a precompile for the active fork.
@@ -217,6 +213,10 @@ func (h *EvmHost) RunPrecompile(addr types.Address, input types.Bytes, gasLimit 
 		GasUsed:   output.GasUsed,
 		GasRefund: output.GasRefund,
 	}, true
+}
+
+func (h *EvmHost) PrecompileHooks() *vm.Hooks {
+	return h.Hooks
 }
 
 func isIdentityPrecompileAddress(addr types.Address) bool {
@@ -269,10 +269,21 @@ func (h *EvmHost) BlockHash(number uint256.Int) types.B256 {
 		return types.B256Zero
 	}
 	n := number[0]
+	current := h.Block.Number[0]
+	if h.Block.Number[1] != 0 || h.Block.Number[2] != 0 || h.Block.Number[3] != 0 || n >= current || current-n > 256 {
+		return types.B256Zero
+	}
+	if h.Block != nil && h.Block.GetHash != nil {
+		hash, err := h.Block.GetHash(n)
+		if err != nil {
+			return types.B256Zero
+		}
+		return hash
+	}
 	if h.Journal.DB == nil {
 		return types.B256Zero
 	}
-	hash, err := h.Journal.DB.BlockHash(n)
+	hash, err := h.Journal.BlockHash(n)
 	if err != nil {
 		return types.B256Zero
 	}

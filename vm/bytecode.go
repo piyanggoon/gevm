@@ -33,6 +33,10 @@ type Bytecode struct {
 // and ReadU16 (2 bytes) at any position without bounds checking.
 const bytecodeEndPadding = 33
 
+// BytecodeEndPadding is the number of trailing zero bytes required for
+// bounds-check-free immediate reads in the generated interpreter.
+const BytecodeEndPadding = bytecodeEndPadding
+
 // NewBytecode creates a Bytecode from raw code bytes.
 // It analyzes the code to build a jump table and pads with trailing zeros
 // to ensure safe reading of immediate operands past the end.
@@ -156,13 +160,6 @@ func (b *Bytecode) ensureJumpTable() {
 		}
 		i++
 	}
-}
-
-// NewBytecodeWithHash creates a Bytecode with a precomputed hash.
-func NewBytecodeWithHash(code []byte, hash types.B256) *Bytecode {
-	bc := NewBytecode(code)
-	bc.hash = &hash
-	return bc
 }
 
 // --- LoopControl ---

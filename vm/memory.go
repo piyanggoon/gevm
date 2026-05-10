@@ -44,15 +44,6 @@ func (m *Memory) Reset() {
 	m.hasChild = false
 }
 
-// NewMemoryWithCapacity creates a new Memory with the given initial capacity.
-func NewMemoryWithCapacity(capacity int) *Memory {
-	buf := make([]byte, 0, capacity)
-	return &Memory{
-		buffer:     &buf,
-		checkpoint: 0,
-	}
-}
-
 // Len returns the length of the current context's memory.
 func (m *Memory) Len() int {
 	return len(*m.buffer) - m.checkpoint

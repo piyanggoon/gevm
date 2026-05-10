@@ -2,14 +2,13 @@ package state
 
 import (
 	"github.com/holiman/uint256"
-	"sync"
 
 	"github.com/Giulio2002/gevm/spec"
 	"github.com/Giulio2002/gevm/types"
 )
 
 // AccountStatus is a bitflag tracking account state.
-type AccountStatus uint8
+type AccountStatus uint16
 
 const (
 	AccountStatusCreated           AccountStatus = 0b00000001
@@ -19,14 +18,18 @@ const (
 	AccountStatusTouched           AccountStatus = 0b00000100
 	AccountStatusLoadedAsNotExist  AccountStatus = 0b00001000
 	AccountStatusCold              AccountStatus = 0b00010000
+	AccountStatusStorageCleared    AccountStatus = 0b00100000
+	AccountStatusPreserveEmpty     AccountStatus = 0b1_00000000
 )
 
 // AccountInfo holds balance, nonce, code hash, and optional code.
 type AccountInfo struct {
-	Balance  uint256.Int
-	Nonce    uint64
-	CodeHash types.B256
-	Code     types.Bytes // nil means code not loaded yet
+	Balance     uint256.Int
+	Nonce       uint64
+	Root        types.B256
+	Incarnation uint64
+	CodeHash    types.B256
+	Code        types.Bytes // nil means code not loaded yet
 }
 
 // DefaultAccountInfo returns an AccountInfo with default values (KECCAK_EMPTY code hash).
@@ -64,11 +67,12 @@ func (info *AccountInfo) Clone() AccountInfo {
 
 // Account is the main account type stored inside the journal.
 type Account struct {
-	Info          AccountInfo
-	OriginalInfo  AccountInfo
-	TransactionID int
-	Storage       EvmStorage
-	Status        AccountStatus
+	Info              AccountInfo
+	OriginalInfo      AccountInfo
+	BlockOriginalInfo AccountInfo
+	TransactionID     int
+	Storage           EvmStorage
+	Status            AccountStatus
 }
 
 // DefaultAccount returns a zero-value Account with empty status.
@@ -83,8 +87,9 @@ func DefaultAccount() *Account {
 // Storage is nil initially and lazily allocated on first write (SLoad/SStore).
 func NewAccountFromInfo(info AccountInfo) *Account {
 	return &Account{
-		Info:         info,
-		OriginalInfo: info.Clone(),
+		Info:              info,
+		OriginalInfo:      info.Clone(),
+		BlockOriginalInfo: info.Clone(),
 	}
 }
 
@@ -92,10 +97,11 @@ func NewAccountFromInfo(info AccountInfo) *Account {
 // Storage is nil initially; most "not existing" accounts (precompiles) never need storage.
 func NewAccountNotExisting(transactionID int) *Account {
 	return &Account{
-		Info:          DefaultAccountInfo(),
-		OriginalInfo:  DefaultAccountInfo(),
-		TransactionID: transactionID,
-		Status:        AccountStatusLoadedAsNotExist,
+		Info:              DefaultAccountInfo(),
+		OriginalInfo:      DefaultAccountInfo(),
+		BlockOriginalInfo: DefaultAccountInfo(),
+		TransactionID:     transactionID,
+		Status:            AccountStatusLoadedAsNotExist,
 	}
 }
 
@@ -105,48 +111,6 @@ func (a *Account) EnsureStorage() {
 	if a.Storage == nil {
 		a.Storage = make(EvmStorage)
 	}
-}
-
-// --- Account Pool ---
-
-var accountPool = sync.Pool{
-	New: func() any { return &Account{} },
-}
-
-// AcquireAccountFromInfo gets an Account from the pool, initialized from info.
-// Code slice is shared between Info and OriginalInfo (never mutated in-place).
-func AcquireAccountFromInfo(info AccountInfo) *Account {
-	acc := accountPool.Get().(*Account)
-	acc.Info = info
-	acc.OriginalInfo = info // shallow copy; Code slice shared (safe: never mutated)
-	acc.TransactionID = 0
-	// Keep Storage map for reuse (cleared on release); EnsureStorage handles nil case.
-	acc.Status = 0
-	return acc
-}
-
-// AcquireAccountNotExisting gets an Account from the pool, marked as not existing.
-func AcquireAccountNotExisting(transactionID int) *Account {
-	acc := accountPool.Get().(*Account)
-	acc.Info = DefaultAccountInfo()
-	acc.OriginalInfo = DefaultAccountInfo()
-	acc.TransactionID = transactionID
-	// Keep Storage map for reuse (cleared on release); EnsureStorage handles nil case.
-	acc.Status = AccountStatusLoadedAsNotExist
-	return acc
-}
-
-// ReleaseAccount returns an Account to the pool.
-func ReleaseAccount(acc *Account) {
-	acc.Info = AccountInfo{}
-	acc.OriginalInfo = AccountInfo{}
-	// Clear map but keep it allocated for reuse by next Acquire.
-	if acc.Storage != nil {
-		clear(acc.Storage)
-	}
-	acc.Status = 0
-	acc.TransactionID = 0
-	accountPool.Put(acc)
 }
 
 // --- AccountStatus flag methods ---
@@ -233,6 +197,16 @@ func (a *Account) IsLoadedAsNotExistingNotTouched() bool {
 	return a.IsLoadedAsNotExisting() && !a.IsTouched()
 }
 
+func (a *Account) MarkPreserveEmpty() { a.Status |= AccountStatusPreserveEmpty }
+func (a *Account) IsPreserveEmpty() bool {
+	return a.Status&AccountStatusPreserveEmpty != 0
+}
+
+func (a *Account) MarkStorageCleared() { a.Status |= AccountStatusStorageCleared }
+func (a *Account) IsStorageCleared() bool {
+	return a.Status&AccountStatusStorageCleared != 0
+}
+
 // IsEmpty returns true if the account info is empty.
 func (a *Account) IsEmpty() bool {
 	return a.Info.IsEmpty()
@@ -250,31 +224,35 @@ func (a *Account) StateClearAwareIsEmpty(forkID spec.ForkID) bool {
 func (a *Account) Selfdestruct() {
 	a.Storage = make(EvmStorage)
 	a.Info = DefaultAccountInfo()
+	a.MarkStorageCleared()
 }
 
 // EvmStorageSlot tracks the current value of a storage slot.
 type EvmStorageSlot struct {
-	OriginalValue uint256.Int
-	PresentValue  uint256.Int
-	TransactionID int
-	IsCold        bool
+	OriginalValue      uint256.Int
+	BlockOriginalValue uint256.Int
+	PresentValue       uint256.Int
+	TransactionID      int
+	IsCold             bool
 }
 
 // NewEvmStorageSlot creates an unchanged slot for the given value.
 func NewEvmStorageSlot(original uint256.Int, transactionID int) *EvmStorageSlot {
 	return &EvmStorageSlot{
-		OriginalValue: original,
-		PresentValue:  original,
-		TransactionID: transactionID,
+		OriginalValue:      original,
+		BlockOriginalValue: original,
+		PresentValue:       original,
+		TransactionID:      transactionID,
 	}
 }
 
 // NewEvmStorageSlotChanged creates a changed slot.
 func NewEvmStorageSlotChanged(original, present uint256.Int, transactionID int) *EvmStorageSlot {
 	return &EvmStorageSlot{
-		OriginalValue: original,
-		PresentValue:  present,
-		TransactionID: transactionID,
+		OriginalValue:      original,
+		BlockOriginalValue: original,
+		PresentValue:       present,
+		TransactionID:      transactionID,
 	}
 }
 

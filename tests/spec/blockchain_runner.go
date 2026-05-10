@@ -226,15 +226,12 @@ func executeBlockchainTest(filePath, testName string, tc *BlockchainTestCase) (r
 
 		// Execute transactions
 		txFailed := false
+		txFailReason := ""
 		for _, btx := range block.Transactions {
-			if btx.Sender == nil {
-				txFailed = true
-				break
-			}
-
 			tx, err := blockTxToTransaction(&btx)
 			if err != nil {
 				txFailed = true
+				txFailReason = fmt.Sprintf("blockTxToTransaction: %v", err)
 				break
 			}
 
@@ -244,6 +241,7 @@ func executeBlockchainTest(filePath, testName string, tc *BlockchainTestCase) (r
 				// Validation error - discard any journal state from LoadAccount
 				evm.Journal.DiscardTx()
 				txFailed = true
+				txFailReason = execResult.Reason.String()
 				break
 			}
 
@@ -252,6 +250,9 @@ func executeBlockchainTest(filePath, testName string, tc *BlockchainTestCase) (r
 		}
 
 		if txFailed {
+			if txFailReason != "" {
+				return makeErr(fmt.Sprintf("unexpected transaction failure: %s", txFailReason))
+			}
 			return makeErr("unexpected transaction failure")
 		}
 
@@ -309,13 +310,21 @@ func buildBlockchainBlockEnv(hdr *BlockHeader, forkID gevmspec.ForkID) host.Bloc
 }
 
 // blockTxToTransaction converts a blockchain test transaction to a host.Transaction.
+// When btx.Sender is nil, the sender is recovered from r/s/v.
 func blockTxToTransaction(btx *BlockTx) (host.Transaction, error) {
-	if btx.Sender == nil {
-		return host.Transaction{}, fmt.Errorf("missing sender")
+	var caller types.Address
+	if btx.Sender != nil {
+		caller = btx.Sender.V
+	} else {
+		recovered, err := recoverBlockTxSender(btx)
+		if err != nil {
+			return host.Transaction{}, fmt.Errorf("missing sender, recovery failed: %w", err)
+		}
+		caller = recovered
 	}
 
 	tx := host.Transaction{
-		Caller:   btx.Sender.V,
+		Caller:   caller,
 		Input:    btx.Data.V,
 		GasLimit: btx.GasLimit.V.Uint64(),
 		Value:    btx.Value.V,
@@ -375,6 +384,51 @@ func blockTxToTransaction(btx *BlockTx) (host.Transaction, error) {
 	}
 
 	return tx, nil
+}
+
+// recoverBlockTxSender recovers the tx sender from r/s/v when the fixture
+// JSON omits it. Used by blockchain tests where signature recovery is part
+// of the consensus check.
+func recoverBlockTxSender(btx *BlockTx) (types.Address, error) {
+	dec := DecodedTx{
+		Nonce:    btx.Nonce.V.Uint64(),
+		GasLimit: btx.GasLimit.V.Uint64(),
+		Value:    btx.Value.V,
+		Data:     btx.Data.V,
+		V:        btx.V.V,
+		R:        btx.R.V,
+		S:        btx.S.V,
+	}
+	if btx.Type != nil {
+		dec.TxType = int(btx.Type.V.Uint64())
+	}
+	if btx.GasPrice != nil {
+		dec.GasPrice = btx.GasPrice.V
+	}
+	if btx.MaxFeePerGas != nil {
+		dec.MaxFeePerGas = btx.MaxFeePerGas.V
+	}
+	if btx.MaxPriorityFeePerGas != nil {
+		dec.MaxPriorityFeePerGas = btx.MaxPriorityFeePerGas.V
+	}
+	if btx.MaxFeePerBlobGas != nil {
+		dec.MaxFeePerBlobGas = btx.MaxFeePerBlobGas.V
+	}
+	if btx.ChainID != nil {
+		cid := btx.ChainID.V.Uint64()
+		dec.ChainId = &cid
+	}
+	if btx.To != nil && *btx.To != "" {
+		addr, err := types.HexToAddress(*btx.To)
+		if err != nil {
+			return types.AddressZero, fmt.Errorf("invalid to: %w", err)
+		}
+		dec.To = &addr
+	}
+	for _, h := range btx.BlobVersionedHashes {
+		dec.BlobHashes = append(dec.BlobHashes, h.V)
+	}
+	return RecoverSender(&dec)
 }
 
 // executeSystemCall performs a system call (EIP-4788, EIP-2935, etc.).
@@ -542,7 +596,7 @@ func validatePostState(journal *state.Journal, expected map[HexAddr]*TestAccount
 			}
 			// If not in journal storage, check DB
 			if actual.IsZero() && journal.DB != nil {
-				dbVal, err := journal.DB.Storage(addr, slot)
+				dbVal, err := journal.Storage(addr, slot)
 				if err == nil {
 					actual = dbVal
 				}
@@ -640,6 +694,12 @@ func skipBlockchainTest(path string, cfg BlockchainRunnerConfig) bool {
 		"prague/eip7685_general_purpose_el_requests",
 		"prague/eip7002_el_triggerable_withdrawals",
 		"osaka/eip7918_blob_reserve_price",
+		// bcExpectSection: meta-tests of the test-filler's own error
+		// reporting — fixtures are intentionally self-inconsistent (wrong
+		// lastblockhash, wrong post-state account values, etc.) to verify
+		// the QA tool emits the correct mismatch messages. They don't
+		// translate cleanly to "EVM client should pass" assertions.
+		"BlockchainTests/InvalidBlocks/bcExpectSection",
 	}
 	for _, skip := range pathSkips {
 		if strings.Contains(pathStr, skip) {

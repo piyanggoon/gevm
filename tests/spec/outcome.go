@@ -87,19 +87,6 @@ func RunTestFileOutcomes(path string, cfg RunnerConfig) ([]TestOutcome, error) {
 	return outcomes, nil
 }
 
-// ExecuteTestOutcome runs a single test case and returns the detailed outcome.
-// This is exported for use by the differential test harness.
-func ExecuteTestOutcome(
-	testName string,
-	specName string,
-	forkID gevmspec.ForkID,
-	unit *TestUnit,
-	tc *TestCase,
-	index int,
-) TestOutcome {
-	return executeTestOutcome(testName, specName, forkID, unit, tc, index)
-}
-
 func executeTestOutcome(
 	testName string,
 	specName string,

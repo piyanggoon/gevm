@@ -33,6 +33,13 @@ func (db *mockDB) CodeByHash(codeHash types.B256) (types.Bytes, error) {
 	return nil, nil
 }
 
+func (db *mockDB) Code(address types.Address) (types.Bytes, error) {
+	if info, ok := db.accounts[address]; ok {
+		return info.Code, nil
+	}
+	return nil, nil
+}
+
 func (db *mockDB) Storage(address types.Address, index uint256.Int) (uint256.Int, error) {
 	if slots, ok := db.storage[address]; ok {
 		if val, found := slots[index]; found {
@@ -455,6 +462,79 @@ func TestJournalCodeChangeRevert(t *testing.T) {
 	}
 }
 
+func TestJournalCodeChangeRevertRestoresPreviousCode(t *testing.T) {
+	j := NewJournal(nil)
+	j.SetForkID(spec.Prague)
+
+	a1 := addr(1)
+	previousHash := types.B256{0xAB}
+	previousCode := types.Bytes{0xef, 0x01, 0x00, 0x01}
+	j.State[a1] = NewAccountFromInfo(AccountInfo{
+		CodeHash: previousHash,
+		Code:     previousCode,
+	})
+	j.State[a1].MarkWarmWithTransactionID(0)
+
+	cp := j.Checkpoint()
+
+	j.SetCodeWithHash(a1, nil, types.KeccakEmpty)
+
+	if j.State[a1].Info.CodeHash != types.KeccakEmpty {
+		t.Fatal("code hash should be cleared")
+	}
+	if j.State[a1].Info.Code != nil {
+		t.Fatal("code should be nil after clear")
+	}
+
+	j.CheckpointRevert(cp)
+	if j.State[a1].Info.CodeHash != previousHash {
+		t.Fatalf("code hash should be reverted to %x, got %x", previousHash, j.State[a1].Info.CodeHash)
+	}
+	if string(j.State[a1].Info.Code) != string(previousCode) {
+		t.Fatalf("code should be restored to %x, got %x", previousCode, j.State[a1].Info.Code)
+	}
+}
+
+func TestJournalTouchRevivesPreviousTxSelfdestruct(t *testing.T) {
+	j := NewJournal(nil)
+	j.SetForkID(spec.Frontier)
+
+	a1 := addr(1)
+	j.State[a1] = NewAccountFromInfo(AccountInfo{
+		Nonce:    1,
+		CodeHash: types.B256{0xAB},
+		Code:     types.Bytes{0x30, 0xff},
+	})
+	j.State[a1].MarkSelfdestructedLocally()
+	j.SelfdestructedAddresses = append(j.SelfdestructedAddresses, a1)
+
+	j.CommitTx()
+
+	if !j.State[a1].IsSelfdestructed() || j.State[a1].IsSelfdestructedLocally() {
+		t.Fatal("account should keep only the block selfdestruct marker after tx commit")
+	}
+	if !j.State[a1].Info.IsEmpty() {
+		t.Fatal("account info should be cleared at tx commit")
+	}
+
+	cp := j.Checkpoint()
+	j.Touch(a1)
+	if j.State[a1].IsSelfdestructed() {
+		t.Fatal("touch in a later transaction should revive the account")
+	}
+
+	j.CheckpointRevert(cp)
+	if !j.State[a1].IsSelfdestructed() {
+		t.Fatal("revert should restore the selfdestruct marker")
+	}
+
+	j.Touch(a1)
+	j.CommitTx()
+	if j.State[a1].IsSelfdestructed() {
+		t.Fatal("revived account should not be deleted at block finalization")
+	}
+}
+
 func TestJournalAccountCreatedRevert(t *testing.T) {
 	j := NewJournal(nil)
 	j.SetForkID(spec.Shanghai)
@@ -686,6 +766,40 @@ func TestJournalWarmAddresses(t *testing.T) {
 	}
 	if j.WarmAddresses.IsWarm(addr(0xAA)) {
 		t.Fatal("access list should be cold after clear")
+	}
+}
+
+func TestSStoreLoadsOriginalStorageAfterLocalSelfdestruct(t *testing.T) {
+	db := newMockDB()
+	j := NewJournal(db)
+	j.SetForkID(spec.Shanghai)
+
+	a1 := addr(1)
+	target := addr(2)
+	db.accounts[a1] = &AccountInfo{
+		Balance:  u256(1000),
+		CodeHash: types.KeccakEmpty,
+	}
+	db.storage[a1] = map[uint256.Int]uint256.Int{
+		u256(1): u256(0x100),
+	}
+
+	if _, err := j.LoadAccount(a1); err != nil {
+		t.Fatalf("load account: %v", err)
+	}
+	if _, err := j.Selfdestruct(a1, target); err != nil {
+		t.Fatalf("selfdestruct: %v", err)
+	}
+
+	result, err := j.SStore(a1, u256(1), u256(1))
+	if err != nil {
+		t.Fatalf("sstore: %v", err)
+	}
+	if result.Data.OriginalValue != u256(0x100) {
+		t.Fatalf("original value after local selfdestruct: got %v, want %v", result.Data.OriginalValue, u256(0x100))
+	}
+	if result.Data.PresentValue != u256(0x100) {
+		t.Fatalf("present value after local selfdestruct: got %v, want %v", result.Data.PresentValue, u256(0x100))
 	}
 }
 

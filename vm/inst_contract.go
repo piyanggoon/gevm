@@ -296,12 +296,9 @@ func opCall(interp *Interpreter, host Host) {
 	if !ok {
 		return
 	}
-	if !transfersValue && tryRunPrecompileCall(interp, host, to, inputRange, outputRange, gasLimit) {
-		return
-	}
-	callInput := make([]byte, inputRange.Length)
+	var callInput types.Bytes
 	if inputRange.Length > 0 {
-		copy(callInput, interp.Memory.Slice(inputRange.Offset, inputRange.Length))
+		callInput = interp.Memory.Slice(inputRange.Offset, inputRange.Length)
 	}
 	interp.SetCallAction(CallInputs{
 		Input:              callInput,
@@ -337,9 +334,9 @@ func opCallcode(interp *Interpreter, host Host) {
 	if !ok {
 		return
 	}
-	callInput := make([]byte, inputRange.Length)
+	var callInput types.Bytes
 	if inputRange.Length > 0 {
-		copy(callInput, interp.Memory.Slice(inputRange.Offset, inputRange.Length))
+		callInput = interp.Memory.Slice(inputRange.Offset, inputRange.Length)
 	}
 	interp.SetCallAction(CallInputs{
 		Input:              callInput,
@@ -374,9 +371,9 @@ func opDelegatecall(interp *Interpreter, host Host) {
 	if !ok {
 		return
 	}
-	callInput := make([]byte, inputRange.Length)
+	var callInput types.Bytes
 	if inputRange.Length > 0 {
-		copy(callInput, interp.Memory.Slice(inputRange.Offset, inputRange.Length))
+		callInput = interp.Memory.Slice(inputRange.Offset, inputRange.Length)
 	}
 	interp.SetCallAction(CallInputs{
 		Input:              callInput,
@@ -411,12 +408,9 @@ func opStaticcall(interp *Interpreter, host Host) {
 	if !ok {
 		return
 	}
-	if tryRunPrecompileCall(interp, host, to, inputRange, outputRange, gasLimit) {
-		return
-	}
-	callInput := make([]byte, inputRange.Length)
+	var callInput types.Bytes
 	if inputRange.Length > 0 {
-		copy(callInput, interp.Memory.Slice(inputRange.Offset, inputRange.Length))
+		callInput = interp.Memory.Slice(inputRange.Offset, inputRange.Length)
 	}
 	interp.SetCallAction(CallInputs{
 		Input:              callInput,
@@ -431,46 +425,3 @@ func opStaticcall(interp *Interpreter, host Host) {
 	})
 }
 
-func tryRunPrecompileCall(interp *Interpreter, host Host, to types.Address, inputRange, outputRange MemoryRange, gasLimit uint64) bool {
-	if !host.IsPrecompile(to) {
-		return false
-	}
-	if interp.Depth+1 > callStackLimit {
-		interp.ReturnData = nil
-		interp.Stack.Push(uint256.Int{})
-		interp.Gas.EraseCost(gasLimit)
-		return true
-	}
-
-	var input types.Bytes
-	if inputRange.Length > 0 {
-		input = interp.Memory.Slice(inputRange.Offset, inputRange.Length)
-	}
-	result, ok := host.RunPrecompile(to, input, gasLimit)
-	if !ok {
-		return false
-	}
-
-	interp.ReturnData = result.Output
-	if result.Result.IsOk() {
-		interp.Stack.Push(uint256.Int{1, 0, 0, 0})
-	} else {
-		interp.Stack.Push(uint256.Int{})
-	}
-	if result.Result.IsOkOrRevert() && outputRange.Length > 0 {
-		copyLen := outputRange.Length
-		if len(result.Output) < copyLen {
-			copyLen = len(result.Output)
-		}
-		if copyLen > 0 {
-			interp.Memory.Set(outputRange.Offset, result.Output[:copyLen])
-		}
-	}
-	if result.Result.IsOkOrRevert() && result.GasUsed <= gasLimit {
-		interp.Gas.EraseCost(gasLimit - result.GasUsed)
-	}
-	if result.Result.IsOk() {
-		interp.Gas.RecordRefund(result.GasRefund)
-	}
-	return true
-}
