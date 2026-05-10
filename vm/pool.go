@@ -161,17 +161,6 @@ func AcquireBytecodeWithHash(code []byte, hash types.B256, jumpTable []byte) *By
 	return bc
 }
 
-// AcquireBorrowedBytecodeWithHash returns a pooled Bytecode backed by an
-// immutable padded code slice owned outside the pool.
-func AcquireBorrowedBytecodeWithHash(padded []byte, originalLen int, hash types.B256, jumpTable []byte) *Bytecode {
-	bc := bytecodePool.Get().(*Bytecode)
-	bc.ResetBorrowedWithHash(padded, originalLen, hash)
-	if jumpTable != nil {
-		bc.SetJumpTable(jumpTable)
-	}
-	return bc
-}
-
 // ReleaseBytecode returns a Bytecode to the pool.
 // The hash is preserved so that AcquireBytecodeWithHash can skip
 // analysis when the same contract code is loaded again.
@@ -204,15 +193,6 @@ func InitEmbeddedInterpreter(interp *Interpreter, stack *Stack) {
 // but operates on an existing (non-pooled) Bytecode.
 func ResetEmbeddedBytecodeWithHash(bc *Bytecode, code []byte, hash types.B256, jumpTable []byte) {
 	bc.ResetWithHash(code, hash)
-	if jumpTable != nil {
-		bc.SetJumpTable(jumpTable)
-	}
-}
-
-// ResetEmbeddedBorrowedBytecodeWithHash resets an embedded Bytecode to use an
-// immutable padded code slice owned outside the Bytecode.
-func ResetEmbeddedBorrowedBytecodeWithHash(bc *Bytecode, padded []byte, originalLen int, hash types.B256, jumpTable []byte) {
-	bc.ResetBorrowedWithHash(padded, originalLen, hash)
 	if jumpTable != nil {
 		bc.SetJumpTable(jumpTable)
 	}

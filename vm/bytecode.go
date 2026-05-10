@@ -11,8 +11,6 @@ import (
 type Bytecode struct {
 	// The raw bytecode bytes (padded with a trailing STOP).
 	code []byte
-	// Whether code points at an immutable cache-owned slice.
-	codeExternal bool
 	// The original bytecode length (before padding).
 	originalLen int
 	// Current program counter.
@@ -66,7 +64,7 @@ func (b *Bytecode) ResetWithHash(code []byte, hash types.B256) {
 	originalLen := len(code)
 
 	// If same hash as previous call on this pooled bytecode, skip analysis
-	if !b.codeExternal && b.hash != nil && *b.hash == hash && b.originalLen == originalLen {
+	if b.hash != nil && *b.hash == hash && b.originalLen == originalLen {
 		needed := originalLen + bytecodeEndPadding
 		if cap(b.code) >= needed {
 			b.code = b.code[:needed]
@@ -86,26 +84,12 @@ func (b *Bytecode) ResetWithHash(code []byte, hash types.B256) {
 	b.hash = &h
 }
 
-// ResetBorrowedWithHash reinitializes the Bytecode from an immutable padded
-// code slice owned by a process-wide cache. The borrowed slice must have at
-// least originalLen+BytecodeEndPadding bytes and must not be mutated.
-func (b *Bytecode) ResetBorrowedWithHash(padded []byte, originalLen int, hash types.B256) {
-	b.code = padded
-	b.codeExternal = true
-	b.originalLen = originalLen
-	b.pc = 0
-	b.running = true
-	h := hash
-	b.hash = &h
-	b.jumpTableReady = false
-}
-
 // Reset reinitializes the Bytecode from new code, reusing existing slice capacity.
 func (b *Bytecode) Reset(code []byte) {
 	originalLen := len(code)
 	needed := originalLen + bytecodeEndPadding
 
-	if !b.codeExternal && cap(b.code) >= needed {
+	if cap(b.code) >= needed {
 		b.code = b.code[:needed]
 	} else {
 		b.code = make([]byte, needed)
@@ -117,7 +101,6 @@ func (b *Bytecode) Reset(code []byte) {
 	b.originalLen = originalLen
 	b.pc = 0
 	b.running = true
-	b.codeExternal = false
 	b.hash = nil
 	b.jumpTableReady = false // defer analysis until first IsValidJump
 }
