@@ -626,38 +626,6 @@ func (h *Handler) touchPrecompileCall(address types.Address, scheme vm.CallSchem
 	return nil
 }
 
-func executePrecompileNoState(
-	precompile *precompiles.Precompile,
-	input types.Bytes,
-	gasLimit uint64,
-	retMemOffset vm.MemoryRange,
-) vm.CallOutcome {
-	gas := vm.NewGas(gasLimit)
-	execResult := precompile.Execute(input, gasLimit)
-	if execResult.IsErr() {
-		resultCode := vm.InstructionResultPrecompileError
-		if *execResult.Err == precompiles.PrecompileErrorOutOfGas {
-			resultCode = vm.InstructionResultPrecompileOOG
-		}
-		return vm.NewCallOutcome(
-			vm.NewInterpreterResult(resultCode, nil, gas),
-			retMemOffset,
-		)
-	}
-
-	output := execResult.Output
-	gas.RecordRefund(output.GasRefund)
-	gas.RecordCost(output.GasUsed)
-	resultCode := vm.InstructionResultReturn
-	if output.Reverted {
-		resultCode = vm.InstructionResultRevert
-	}
-	return vm.NewCallOutcome(
-		vm.NewInterpreterResult(resultCode, output.Bytes, gas),
-		retMemOffset,
-	)
-}
-
 // handleCallReturn processes a call sub-frame result and updates the parent interpreter.
 func (h *Handler) handleCallReturn(interp *vm.Interpreter, outcome vm.CallOutcome) {
 	result := outcome.Result

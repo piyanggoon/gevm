@@ -1,105 +1,12 @@
-// State root computation: merges pre-state (MemDB) with journal changes
-// and computes the Merkle Patricia Trie root hash.
+// State root MPT helpers: storageRoot and rlpEncodeAccount (used by tests
+// to verify the MPT primitives; the StateRoot driver function and its
+// account-merging machinery were unused and have been removed).
 package spec
 
 import (
-	gevmspec "github.com/Giulio2002/gevm/spec"
-	"github.com/Giulio2002/gevm/state"
 	"github.com/Giulio2002/gevm/types"
 	"github.com/holiman/uint256"
 )
-
-// accountForRoot holds the final state of an account for root computation.
-type accountForRoot struct {
-	nonce    uint64
-	balance  uint256.Int
-	codeHash types.B256
-	storage  map[uint256.Int]uint256.Int // only non-zero slots
-}
-
-// StateRoot computes the post-execution state root hash.
-func StateRoot(db *MemDB, journal *state.Journal, forkID gevmspec.ForkID) types.B256 {
-	accounts := collectAccounts(db, journal, forkID)
-	if len(accounts) == 0 {
-		return emptyTrieRoot
-	}
-
-	// Build state trie entries.
-	entries := make([]mptEntry, 0, len(accounts))
-	for addr, acc := range accounts {
-		sRoot := storageRoot(acc.storage)
-		value := rlpEncodeAccount(acc.nonce, acc.balance, sRoot, acc.codeHash)
-		addrHash := types.Keccak256(addr[:])
-		entries = append(entries, mptEntry{
-			keyNibbles: keyToNibbles(addrHash),
-			value:      value,
-		})
-	}
-
-	return mptRoot(entries)
-}
-
-// collectAccounts merges pre-state (MemDB) with journal changes.
-func collectAccounts(db *MemDB, journal *state.Journal, forkID gevmspec.ForkID) map[types.Address]*accountForRoot {
-	result := make(map[types.Address]*accountForRoot)
-
-	// Step 1: Load all pre-state accounts.
-	db.ForEachAccount(func(addr types.Address, info state.AccountInfo, storage map[uint256.Int]uint256.Int) {
-		st := make(map[uint256.Int]uint256.Int, len(storage))
-		for k, v := range storage {
-			if !v.IsZero() {
-				st[k] = v
-			}
-		}
-		result[addr] = &accountForRoot{
-			nonce:    info.Nonce,
-			balance:  info.Balance,
-			codeHash: info.CodeHash,
-			storage:  st,
-		}
-	})
-
-	// Step 2: Overlay journal state.
-	for addr, acc := range journal.State {
-		// Check EIP-161 emptiness: if the account is empty per fork rules, remove it.
-		// This handles both pre-state accounts that became empty and
-		// accounts loaded-as-not-existing that were never meaningfully touched.
-		if acc.StateClearAwareIsEmpty(forkID) {
-			delete(result, addr)
-			continue
-		}
-
-		// Build final account state from journal.
-		afr := &accountForRoot{
-			nonce:    acc.Info.Nonce,
-			balance:  acc.Info.Balance,
-			codeHash: acc.Info.CodeHash,
-			storage:  make(map[uint256.Int]uint256.Int),
-		}
-
-		// Start with pre-state storage (if any).
-		if pre, ok := result[addr]; ok {
-			for k, v := range pre.storage {
-				afr.storage[k] = v
-			}
-		}
-
-		// Overlay journal storage changes.
-		if acc.Storage != nil {
-			for slot, slotVal := range acc.Storage {
-				if slotVal.PresentValue.IsZero() {
-					delete(afr.storage, slot)
-				} else {
-					afr.storage[slot] = slotVal.PresentValue
-				}
-			}
-		}
-
-		result[addr] = afr
-	}
-
-	return result
-}
 
 // storageRoot computes the MPT root of an account's storage trie.
 func storageRoot(storage map[uint256.Int]uint256.Int) types.B256 {

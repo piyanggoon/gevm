@@ -2,7 +2,6 @@ package state
 
 import (
 	"github.com/holiman/uint256"
-	"sync"
 
 	"github.com/Giulio2002/gevm/spec"
 	"github.com/Giulio2002/gevm/types"
@@ -112,51 +111,6 @@ func (a *Account) EnsureStorage() {
 	if a.Storage == nil {
 		a.Storage = make(EvmStorage)
 	}
-}
-
-// --- Account Pool ---
-
-var accountPool = sync.Pool{
-	New: func() any { return &Account{} },
-}
-
-// AcquireAccountFromInfo gets an Account from the pool, initialized from info.
-// Code slice is shared between Info and OriginalInfo (never mutated in-place).
-func AcquireAccountFromInfo(info AccountInfo) *Account {
-	acc := accountPool.Get().(*Account)
-	acc.Info = info
-	acc.OriginalInfo = info // shallow copy; Code slice shared (safe: never mutated)
-	acc.BlockOriginalInfo = info
-	acc.TransactionID = 0
-	// Keep Storage map for reuse (cleared on release); EnsureStorage handles nil case.
-	acc.Status = 0
-	return acc
-}
-
-// AcquireAccountNotExisting gets an Account from the pool, marked as not existing.
-func AcquireAccountNotExisting(transactionID int) *Account {
-	acc := accountPool.Get().(*Account)
-	acc.Info = DefaultAccountInfo()
-	acc.OriginalInfo = DefaultAccountInfo()
-	acc.BlockOriginalInfo = DefaultAccountInfo()
-	acc.TransactionID = transactionID
-	// Keep Storage map for reuse (cleared on release); EnsureStorage handles nil case.
-	acc.Status = AccountStatusLoadedAsNotExist
-	return acc
-}
-
-// ReleaseAccount returns an Account to the pool.
-func ReleaseAccount(acc *Account) {
-	acc.Info = AccountInfo{}
-	acc.OriginalInfo = AccountInfo{}
-	acc.BlockOriginalInfo = AccountInfo{}
-	// Clear map but keep it allocated for reuse by next Acquire.
-	if acc.Storage != nil {
-		clear(acc.Storage)
-	}
-	acc.Status = 0
-	acc.TransactionID = 0
-	accountPool.Put(acc)
 }
 
 // --- AccountStatus flag methods ---
